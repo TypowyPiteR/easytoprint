@@ -63,6 +63,184 @@ impl EngineKind {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Print options (DEVMODE overrides of the printer's Windows defaults)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum DuplexMode {
+    /// the printer's own default
+    #[default]
+    Printer,
+    Simplex,
+    /// two-sided, flip on the long edge (books)
+    LongEdge,
+    /// two-sided, flip on the short edge (calendars)
+    ShortEdge,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ColorMode {
+    #[default]
+    Printer,
+    Color,
+    Grayscale,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum PaperMode {
+    #[default]
+    Printer,
+    A4,
+    Letter,
+}
+
+/// Overrides applied to every print job. `Printer` variants mean
+/// "leave whatever Windows has configured as the printer default".
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct PrintSettings {
+    pub duplex: DuplexMode,
+    pub color: ColorMode,
+    pub paper: PaperMode,
+}
+
+impl DuplexMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            DuplexMode::Printer => "Printer default",
+            DuplexMode::Simplex => "One-sided",
+            DuplexMode::LongEdge => "Two-sided (long edge)",
+            DuplexMode::ShortEdge => "Two-sided (short edge)",
+        }
+    }
+}
+
+impl ColorMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ColorMode::Printer => "Printer default",
+            ColorMode::Color => "Color",
+            ColorMode::Grayscale => "Grayscale",
+        }
+    }
+}
+
+impl PaperMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            PaperMode::Printer => "Printer default",
+            PaperMode::A4 => "A4",
+            PaperMode::Letter => "Letter",
+        }
+    }
+}
+
+/// Writes the chosen overrides into a DEVMODE struct (pure — unit-testable).
+#[cfg(windows)]
+fn apply_settings(dm: &mut windows_sys::Win32::Graphics::Gdi::DEVMODEW, s: &PrintSettings) {
+    use windows_sys::Win32::Graphics::Gdi::{
+        DMCOLOR_COLOR, DMCOLOR_MONOCHROME, DMDUP_HORIZONTAL, DMDUP_SIMPLEX, DMDUP_VERTICAL,
+        DMPAPER_A4, DMPAPER_LETTER, DM_COLOR, DM_DUPLEX, DM_PAPERSIZE,
+    };
+    match s.duplex {
+        DuplexMode::Printer => {}
+        DuplexMode::Simplex => {
+            dm.dmDuplex = DMDUP_SIMPLEX;
+            dm.dmFields |= DM_DUPLEX;
+        }
+        DuplexMode::LongEdge => {
+            dm.dmDuplex = DMDUP_VERTICAL;
+            dm.dmFields |= DM_DUPLEX;
+        }
+        DuplexMode::ShortEdge => {
+            dm.dmDuplex = DMDUP_HORIZONTAL;
+            dm.dmFields |= DM_DUPLEX;
+        }
+    }
+    match s.color {
+        ColorMode::Printer => {}
+        ColorMode::Color => {
+            dm.dmColor = DMCOLOR_COLOR;
+            dm.dmFields |= DM_COLOR;
+        }
+        ColorMode::Grayscale => {
+            dm.dmColor = DMCOLOR_MONOCHROME;
+            dm.dmFields |= DM_COLOR;
+        }
+    }
+    match s.paper {
+        PaperMode::Printer => {}
+        PaperMode::A4 => {
+            dm.Anonymous1.Anonymous1.dmPaperSize = DMPAPER_A4 as i16;
+            dm.dmFields |= DM_PAPERSIZE;
+        }
+        PaperMode::Letter => {
+            dm.Anonymous1.Anonymous1.dmPaperSize = DMPAPER_LETTER as i16;
+            dm.dmFields |= DM_PAPERSIZE;
+        }
+    }
+}
+
+/// Fetches the printer's default DEVMODE (with driver-private data),
+/// applies the overrides and validates the result with the driver.
+#[cfg(windows)]
+fn devmode_buffer(printer: &str, settings: &PrintSettings) -> Option<Vec<u8>> {
+    use windows_sys::Win32::Graphics::Gdi::{DEVMODEW, DM_IN_BUFFER, DM_OUT_BUFFER};
+    use windows_sys::Win32::Graphics::Printing::{
+        ClosePrinter, DocumentPropertiesW, OpenPrinterW, PRINTER_HANDLE,
+    };
+    unsafe {
+        let name: Vec<u16> = printer.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut handle: PRINTER_HANDLE = PRINTER_HANDLE::default();
+        if OpenPrinterW(name.as_ptr(), &mut handle, std::ptr::null()) == 0 {
+            return None;
+        }
+        let size = DocumentPropertiesW(
+            std::ptr::null_mut(),
+            handle,
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            0,
+        );
+        if size <= 0 {
+            ClosePrinter(handle);
+            return None;
+        }
+        let mut buf = vec![0u8; size as usize];
+        let rc = DocumentPropertiesW(
+            std::ptr::null_mut(),
+            handle,
+            name.as_ptr(),
+            buf.as_mut_ptr() as *mut DEVMODEW,
+            std::ptr::null(),
+            DM_OUT_BUFFER,
+        );
+        if rc < 0 {
+            ClosePrinter(handle);
+            return None;
+        }
+        {
+            let dm = &mut *(buf.as_mut_ptr() as *mut DEVMODEW);
+            apply_settings(dm, settings);
+        }
+        // let the driver validate (and possibly adjust) the modified settings
+        let ok = DocumentPropertiesW(
+            std::ptr::null_mut(),
+            handle,
+            name.as_ptr(),
+            buf.as_mut_ptr() as *mut DEVMODEW,
+            buf.as_ptr() as *const DEVMODEW,
+            DM_IN_BUFFER | DM_OUT_BUFFER,
+        );
+        ClosePrinter(handle);
+        if ok < 0 {
+            return None;
+        }
+        Some(buf)
+    }
+}
+
 /// PDFium must be initialized exactly once per process — a shared instance
 /// is created on first use and reused for every subsequent print job.
 static PDFIUM: OnceLock<Option<Pdfium>> = OnceLock::new();
@@ -79,7 +257,12 @@ fn shared_pdfium() -> Option<&'static Pdfium> {
 
 /// Prints a single PDF file with the selected engine.
 /// Blocks until the job has been handed over to the print spooler.
-pub fn print_pdf(engine: &EngineKind, pdf: &Path, printer: Option<&str>) -> Result<(), String> {
+pub fn print_pdf(
+    engine: &EngineKind,
+    pdf: &Path,
+    printer: Option<&str>,
+    settings: &PrintSettings,
+) -> Result<(), String> {
     match engine {
         EngineKind::Builtin => {
             #[cfg(windows)]
@@ -92,7 +275,8 @@ pub fn print_pdf(engine: &EngineKind, pdf: &Path, printer: Option<&str>) -> Resu
                 let Some(pdfium) = shared_pdfium() else {
                     return Err("failed to load pdfium.dll".into());
                 };
-                gdi_print(pdfium, pdf, &printer)
+                let dm = devmode_buffer(&printer, settings);
+                gdi_print(pdfium, pdf, &printer, dm.as_deref())
             }
             #[cfg(not(windows))]
             Err("built-in printing is supported on Windows only".into())
@@ -141,7 +325,12 @@ fn default_printer_name() -> Option<String> {
 /// Sends a PDF through GDI: each page is rendered to a bitmap (PDFium)
 /// and drawn onto the printer device context with StretchDIBits.
 #[cfg(windows)]
-pub(crate) fn gdi_print(pdfium: &Pdfium, pdf: &Path, printer: &str) -> Result<(), String> {
+pub(crate) fn gdi_print(
+    pdfium: &Pdfium,
+    pdf: &Path,
+    printer: &str,
+    devmode: Option<&[u8]>,
+) -> Result<(), String> {
     use windows_sys::Win32::Graphics::Gdi as g;
     use windows_sys::Win32::Storage::Xps as xps;
 
@@ -156,12 +345,10 @@ pub(crate) fn gdi_print(pdfium: &Pdfium, pdf: &Path, printer: &str) -> Result<()
         .collect();
 
     unsafe {
-        let hdc = g::CreateDCW(
-            std::ptr::null(),
-            dev.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-        );
+        let dm_ptr = devmode
+            .map(|b| b.as_ptr() as *const g::DEVMODEW)
+            .unwrap_or(std::ptr::null());
+        let hdc = g::CreateDCW(std::ptr::null(), dev.as_ptr(), std::ptr::null(), dm_ptr);
         if hdc.is_null() {
             return Err(format!("failed to open printer “{printer}”"));
         }
@@ -311,9 +498,10 @@ mod tests {
         std::fs::write(&src, sample_pdf()).unwrap();
 
         let engine = EngineKind::Builtin;
+        let opts = PrintSettings::default();
         // two jobs in a row — must not hit "library is already initialized"
-        print_pdf(&engine, &src, Some(&printer)).expect("first print failed");
-        print_pdf(&engine, &src, Some(&printer)).expect("second print failed");
+        print_pdf(&engine, &src, Some(&printer), &opts).expect("first print failed");
+        print_pdf(&engine, &src, Some(&printer), &opts).expect("second print failed");
 
         // the printout is asynchronous — wait for the spooler to write the file
         let mut len = 0u64;
@@ -357,5 +545,34 @@ mod tests {
             top > bottom,
             "the printout appears flipped (dark pixels: top={top}, bottom={bottom})"
         );
+    }
+
+    #[test]
+    fn devmode_overrides_are_written() {
+        if cfg!(not(windows)) {
+            return;
+        }
+        use windows_sys::Win32::Graphics::Gdi::{
+            DMCOLOR_MONOCHROME, DMDUP_VERTICAL, DMPAPER_A4, DM_COLOR, DM_DUPLEX, DM_PAPERSIZE,
+            DEVMODEW,
+        };
+        let mut dm = DEVMODEW::default();
+        let s = PrintSettings {
+            duplex: DuplexMode::LongEdge,
+            color: ColorMode::Grayscale,
+            paper: PaperMode::A4,
+        };
+        apply_settings(&mut dm, &s);
+        assert_eq!(dm.dmDuplex, DMDUP_VERTICAL);
+        assert_eq!(dm.dmColor, DMCOLOR_MONOCHROME);
+        assert_eq!(unsafe { dm.Anonymous1.Anonymous1.dmPaperSize }, DMPAPER_A4 as i16);
+        assert_eq!(dm.dmFields & DM_DUPLEX, DM_DUPLEX);
+        assert_eq!(dm.dmFields & DM_COLOR, DM_COLOR);
+        assert_eq!(dm.dmFields & DM_PAPERSIZE, DM_PAPERSIZE);
+        // "Printer default" must leave the DEVMODE untouched
+        let mut dm = DEVMODEW::default();
+        apply_settings(&mut dm, &PrintSettings::default());
+        assert_eq!(dm.dmFields, 0);
+        assert_eq!(dm.dmDuplex, 0);
     }
 }

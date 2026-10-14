@@ -164,6 +164,7 @@ fn run_queue(
     queue: Queue,
     engine: print::EngineKind,
     printer: Option<String>,
+    settings: print::PrintSettings,
     stop: Arc<AtomicBool>,
 ) {
     loop {
@@ -180,7 +181,7 @@ fn run_queue(
                 })
         };
         let Some(pdf) = next else { break };
-        let result = print::print_pdf(&engine, &pdf, printer.as_deref());
+        let result = print::print_pdf(&engine, &pdf, printer.as_deref(), &settings);
         {
             let mut g = queue.lock().unwrap();
             if let Some(j) = g
@@ -464,6 +465,7 @@ struct App {
     /// ongoing row drag: (source index, insertion index)
     drag: Option<(usize, usize)>,
     engine: Option<print::EngineKind>,
+    pset: print::PrintSettings,
 }
 
 impl App {
@@ -514,6 +516,7 @@ impl App {
             settings_open: std::env::var("ETP_DEMO").as_deref() == Ok("2"),
             drag: None,
             engine: print::EngineKind::detect(),
+            pset: print::PrintSettings::default(),
         }
     }
 
@@ -530,9 +533,10 @@ impl App {
         let printer = if printer.is_empty() { None } else { Some(printer) };
         let queue = self.queue.clone();
         let stop = self.stop_flag.clone();
+        let settings = self.pset;
         self.stop_flag.store(false, AtomicOrdering::Relaxed);
         self.worker = Some(thread::spawn(move || {
-            run_queue(queue, engine, printer, stop)
+            run_queue(queue, engine, printer, settings, stop)
         }));
     }
 }
@@ -1150,12 +1154,15 @@ impl eframe::App for App {
             );
             let mut open = self.settings_open;
             let mut close = false;
-            // exact window height for the content: base + optional hint/engine lines
-            let mut h = 204.0;
+            // exact window height for the content: base + option rows + optional lines
+            let mut h = 204.0 + 3.0 * 46.0;
             if self.printing() {
                 h += 17.0;
             }
-            if self.engine.is_some() {
+            if matches!(
+                self.engine,
+                Some(print::EngineKind::PdfToPrinter(_))
+            ) {
                 h += 17.0;
             }
             let win_frame = egui::Frame::window(&ctx.style())
@@ -1209,6 +1216,86 @@ impl eframe::App for App {
                                 .color(theme::AMBER_TX),
                         );
                     }
+                    // duplex override
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("Duplex").size(12.5).color(theme::INK_SOFT));
+                    egui::ComboBox::from_id_salt("duplex")
+                        .selected_text(
+                            RichText::new(self.pset.duplex.label()).size(13.0).color(theme::INK),
+                        )
+                        .width(336.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.pset.duplex,
+                                print::DuplexMode::Printer,
+                                print::DuplexMode::Printer.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.pset.duplex,
+                                print::DuplexMode::Simplex,
+                                print::DuplexMode::Simplex.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.pset.duplex,
+                                print::DuplexMode::LongEdge,
+                                print::DuplexMode::LongEdge.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.pset.duplex,
+                                print::DuplexMode::ShortEdge,
+                                print::DuplexMode::ShortEdge.label(),
+                            );
+                        });
+                    // color override
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("Color").size(12.5).color(theme::INK_SOFT));
+                    egui::ComboBox::from_id_salt("color")
+                        .selected_text(
+                            RichText::new(self.pset.color.label()).size(13.0).color(theme::INK),
+                        )
+                        .width(336.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.pset.color,
+                                print::ColorMode::Printer,
+                                print::ColorMode::Printer.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.pset.color,
+                                print::ColorMode::Color,
+                                print::ColorMode::Color.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.pset.color,
+                                print::ColorMode::Grayscale,
+                                print::ColorMode::Grayscale.label(),
+                            );
+                        });
+                    // paper size override
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("Paper size").size(12.5).color(theme::INK_SOFT));
+                    egui::ComboBox::from_id_salt("paper")
+                        .selected_text(
+                            RichText::new(self.pset.paper.label()).size(13.0).color(theme::INK),
+                        )
+                        .width(336.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.pset.paper,
+                                print::PaperMode::Printer,
+                                print::PaperMode::Printer.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.pset.paper,
+                                print::PaperMode::A4,
+                                print::PaperMode::A4.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.pset.paper,
+                                print::PaperMode::Letter,
+                                print::PaperMode::Letter.label(),
+                            );
+                        });
                     ui.add_space(10.0);
                     ui.checkbox(
                         &mut self.autostart,
@@ -1224,6 +1311,13 @@ impl eframe::App for App {
                                 .size(11.5)
                                 .color(theme::INK_SOFT),
                         );
+                        if matches!(engine, print::EngineKind::PdfToPrinter(_)) {
+                            ui.label(
+                                RichText::new("print options need the built-in engine")
+                                    .size(11.5)
+                                    .color(theme::AMBER_TX),
+                            );
+                        }
                     }
                     ui.add_space(8.0);
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
