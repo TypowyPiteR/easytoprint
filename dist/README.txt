@@ -3,9 +3,9 @@ EasyToPrint — bulk PDF printing
 
 Getting started
 ---------------
-1) Make sure BOTH files sit in the same folder:
+1) Make sure BOTH of these are in place:
    - easytoprint.exe
-   - pdfium.dll        (the PDF rendering library)
+   - lib\pdfium.dll        (the PDF rendering library)
 
 2) Run easytoprint.exe.
 
@@ -39,5 +39,5 @@ Stop           - finishes after the current file (never cuts it in half)
 Requirements
 ------------
 - Windows
-- pdfium.dll next to the program (included in this folder)
+- lib\pdfium.dll next to the program (included in this folder)
 - Nothing else.

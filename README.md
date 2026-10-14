@@ -22,11 +22,11 @@ status of every file. Each PDF arrives as a separate print job.
 ## Download
 
 Grab the latest build from the **[Releases](https://github.com/TypowyPiteR/easytoprint/releases)**
-page, unzip, and keep both files together in one folder:
+page, unzip, and keep the layout as-is:
 
 ```
 easytoprint.exe   <- the program
-pdfium.dll        <- the PDF rendering library (required)
+lib/pdfium.dll    <- the PDF rendering library (required)
 ```
 
 ## How it works

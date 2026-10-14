@@ -860,6 +860,7 @@ name = "easytoprint"
 version = "0.1.6"
 dependencies = [
  "eframe",
+ "image",
  "pdfium-render",
  "rfd",
  "windows-sys 0.61.2",

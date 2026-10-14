@@ -38,11 +38,11 @@ fn exe_ancestors() -> Vec<PathBuf> {
 }
 
 impl EngineKind {
-    /// pdfium.dll next to the program takes priority; without it — the
-    /// legacy external tool.
+    /// pdfium.dll (in the lib/ subfolder or next to the program) takes
+    /// priority; without it — the legacy external tool.
     pub fn detect() -> Option<EngineKind> {
         for dir in exe_ancestors() {
-            if dir.join("pdfium.dll").is_file() {
+            if dir.join("lib").join("pdfium.dll").is_file() || dir.join("pdfium.dll").is_file() {
                 return Some(EngineKind::Builtin);
             }
         }
@@ -248,6 +248,18 @@ static PDFIUM: OnceLock<Option<Pdfium>> = OnceLock::new();
 fn shared_pdfium() -> Option<&'static Pdfium> {
     PDFIUM
         .get_or_init(|| {
+            // preferred location: lib/pdfium.dll next to the executable
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    let lib = dir.join("lib").join("pdfium.dll");
+                    if lib.is_file() {
+                        if let Ok(bindings) = Pdfium::bind_to_library(&lib) {
+                            return Some(Pdfium::new(bindings));
+                        }
+                    }
+                }
+            }
+            // fallback: next to the exe / system search path
             Pdfium::bind_to_system_library()
                 .ok()
                 .map(Pdfium::new)

@@ -1,8 +1,9 @@
 /target
 PDFtoPrinter.exe
 pdfium.dll
+lib/pdfium.dll
 dist/*.exe
-dist/*.dll
+dist/lib
 ui_*.png
 *.zip
 *.tgz

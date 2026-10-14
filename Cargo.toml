@@ -6,6 +6,7 @@ description = "Masowy druk PDF - kolejka z drag & drop"
 
 [dependencies]
 eframe = "0.33"
+image = { version = "0.25", default-features = false, features = ["png"] }
 pdfium-render = "0.9"
 rfd = "0.15"
 

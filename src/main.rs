@@ -381,6 +381,26 @@ fn cmyk_mark(ui: &mut egui::Ui, size: f32) {
     }
 }
 
+/// Bordered settings section with a small caption.
+fn settings_group(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(4.0);
+    egui::Frame::default()
+        .fill(theme::PAPER)
+        .stroke(Stroke::new(1.0_f32, theme::HAIRLINE))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_width(312.0);
+            ui.label(
+                RichText::new(title.to_uppercase())
+                    .size(10.5)
+                    .color(theme::INK_SOFT),
+            );
+            ui.add_space(4.0);
+            content(ui);
+        });
+}
+
 /// Round gear button (drawn by hand — no font dependency).
 fn gear_button(ui: &mut egui::Ui) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(34.0, 34.0), Sense::click());
@@ -1154,8 +1174,8 @@ impl eframe::App for App {
             );
             let mut open = self.settings_open;
             let mut close = false;
-            // exact window height for the content: base + option rows + optional lines
-            let mut h = 204.0 + 3.0 * 46.0;
+            // exact window height for the content: base + optional lines
+            let mut h = 404.0;
             if self.printing() {
                 h += 17.0;
             }
@@ -1180,131 +1200,113 @@ impl eframe::App for App {
                 .open(&mut open)
                 .show(ctx, |ui| {
                     ui.set_width(336.0);
-                    ui.add_space(2.0);
-                    ui.label(
-                        RichText::new("Printer")
-                            .size(12.5)
-                            .color(theme::INK_SOFT),
-                    );
-                    let selected = if self.printer.is_empty() {
-                        match &self.default_printer {
-                            Some(d) => format!("Default ({d})"),
-                            None => "Default".to_string(),
+                    // ---- General ----
+                    settings_group(ui, "General", |ui| {
+                        ui.label(
+                            RichText::new("Printer")
+                                .size(12.5)
+                                .color(theme::INK_SOFT),
+                        );
+                        let selected = if self.printer.is_empty() {
+                            match &self.default_printer {
+                                Some(d) => format!("Default ({d})"),
+                                None => "Default".to_string(),
+                            }
+                        } else {
+                            self.printer.clone()
+                        };
+                        ui.add_enabled_ui(!self.printing(), |ui| {
+                            egui::ComboBox::from_id_salt("printer")
+                                .selected_text(
+                                    RichText::new(selected).size(13.0).color(theme::INK),
+                                )
+                                .width(312.0)
+                                .show_ui(ui, |ui| {
+                                    let def_label = match &self.default_printer {
+                                        Some(d) => format!("Default ({d})"),
+                                        None => "Default".to_string(),
+                                    };
+                                    ui.selectable_value(&mut self.printer, String::new(), def_label);
+                                    for p in self.printers.clone() {
+                                        ui.selectable_value(&mut self.printer, p.clone(), p);
+                                    }
+                                });
+                        });
+                        if self.printing() {
+                            ui.label(
+                                RichText::new("applies from the next print job")
+                                    .size(11.5)
+                                    .color(theme::AMBER_TX),
+                            );
                         }
-                    } else {
-                        self.printer.clone()
-                    };
-                    ui.add_enabled_ui(!self.printing(), |ui| {
-                        egui::ComboBox::from_id_salt("printer")
-                            .selected_text(RichText::new(selected).size(13.5).color(theme::INK))
-                            .width(336.0)
+                        ui.add_space(6.0);
+                        ui.checkbox(
+                            &mut self.autostart,
+                            RichText::new("Print immediately after adding files")
+                                .size(13.0)
+                                .color(theme::INK),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    });
+                    // ---- Printing ----
+                    settings_group(ui, "Printing", |ui| {
+                        ui.label(RichText::new("Duplex").size(12.5).color(theme::INK_SOFT));
+                        egui::ComboBox::from_id_salt("duplex")
+                            .selected_text(
+                                RichText::new(self.pset.duplex.label())
+                                    .size(13.0)
+                                    .color(theme::INK),
+                            )
+                            .width(312.0)
                             .show_ui(ui, |ui| {
-                                let def_label = match &self.default_printer {
-                                    Some(d) => format!("Default ({d})"),
-                                    None => "Default".to_string(),
-                                };
-                                ui.selectable_value(&mut self.printer, String::new(), def_label);
-                                for p in self.printers.clone() {
-                                    ui.selectable_value(&mut self.printer, p.clone(), p);
+                                for mode in [
+                                    print::DuplexMode::Printer,
+                                    print::DuplexMode::Simplex,
+                                    print::DuplexMode::LongEdge,
+                                    print::DuplexMode::ShortEdge,
+                                ] {
+                                    ui.selectable_value(&mut self.pset.duplex, mode, mode.label());
+                                }
+                            });
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("Color").size(12.5).color(theme::INK_SOFT));
+                        egui::ComboBox::from_id_salt("color")
+                            .selected_text(
+                                RichText::new(self.pset.color.label())
+                                    .size(13.0)
+                                    .color(theme::INK),
+                            )
+                            .width(312.0)
+                            .show_ui(ui, |ui| {
+                                for mode in [
+                                    print::ColorMode::Printer,
+                                    print::ColorMode::Color,
+                                    print::ColorMode::Grayscale,
+                                ] {
+                                    ui.selectable_value(&mut self.pset.color, mode, mode.label());
+                                }
+                            });
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("Paper size").size(12.5).color(theme::INK_SOFT));
+                        egui::ComboBox::from_id_salt("paper")
+                            .selected_text(
+                                RichText::new(self.pset.paper.label())
+                                    .size(13.0)
+                                    .color(theme::INK),
+                            )
+                            .width(312.0)
+                            .show_ui(ui, |ui| {
+                                for mode in [
+                                    print::PaperMode::Printer,
+                                    print::PaperMode::A4,
+                                    print::PaperMode::Letter,
+                                ] {
+                                    ui.selectable_value(&mut self.pset.paper, mode, mode.label());
                                 }
                             });
                     });
-                    if self.printing() {
-                        ui.label(
-                            RichText::new("applies from the next print job")
-                                .size(11.5)
-                                .color(theme::AMBER_TX),
-                        );
-                    }
-                    // duplex override
-                    ui.add_space(8.0);
-                    ui.label(RichText::new("Duplex").size(12.5).color(theme::INK_SOFT));
-                    egui::ComboBox::from_id_salt("duplex")
-                        .selected_text(
-                            RichText::new(self.pset.duplex.label()).size(13.0).color(theme::INK),
-                        )
-                        .width(336.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.pset.duplex,
-                                print::DuplexMode::Printer,
-                                print::DuplexMode::Printer.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.pset.duplex,
-                                print::DuplexMode::Simplex,
-                                print::DuplexMode::Simplex.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.pset.duplex,
-                                print::DuplexMode::LongEdge,
-                                print::DuplexMode::LongEdge.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.pset.duplex,
-                                print::DuplexMode::ShortEdge,
-                                print::DuplexMode::ShortEdge.label(),
-                            );
-                        });
-                    // color override
-                    ui.add_space(8.0);
-                    ui.label(RichText::new("Color").size(12.5).color(theme::INK_SOFT));
-                    egui::ComboBox::from_id_salt("color")
-                        .selected_text(
-                            RichText::new(self.pset.color.label()).size(13.0).color(theme::INK),
-                        )
-                        .width(336.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.pset.color,
-                                print::ColorMode::Printer,
-                                print::ColorMode::Printer.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.pset.color,
-                                print::ColorMode::Color,
-                                print::ColorMode::Color.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.pset.color,
-                                print::ColorMode::Grayscale,
-                                print::ColorMode::Grayscale.label(),
-                            );
-                        });
-                    // paper size override
-                    ui.add_space(8.0);
-                    ui.label(RichText::new("Paper size").size(12.5).color(theme::INK_SOFT));
-                    egui::ComboBox::from_id_salt("paper")
-                        .selected_text(
-                            RichText::new(self.pset.paper.label()).size(13.0).color(theme::INK),
-                        )
-                        .width(336.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.pset.paper,
-                                print::PaperMode::Printer,
-                                print::PaperMode::Printer.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.pset.paper,
-                                print::PaperMode::A4,
-                                print::PaperMode::A4.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.pset.paper,
-                                print::PaperMode::Letter,
-                                print::PaperMode::Letter.label(),
-                            );
-                        });
-                    ui.add_space(10.0);
-                    ui.checkbox(
-                        &mut self.autostart,
-                        RichText::new("Print immediately after adding files")
-                            .size(13.0)
-                            .color(theme::INK),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    ui.add_space(4.0);
+                    // ---- footer ----
+                    ui.add_space(6.0);
                     if let Some(engine) = &self.engine {
                         ui.label(
                             RichText::new(format!("Print engine: {}", engine.label()))
@@ -1319,7 +1321,7 @@ impl eframe::App for App {
                             );
                         }
                     }
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add(
@@ -1359,11 +1361,16 @@ impl eframe::App for App {
 }
 
 fn main() -> eframe::Result<()> {
+    let icon = load_icon();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("EasyToPrint — bulk PDF printing")
+        .with_inner_size([620.0, 830.0])
+        .with_min_inner_size([480.0, 560.0]);
+    if let Some(icon) = icon {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("EasyToPrint — bulk PDF printing")
-            .with_inner_size([620.0, 830.0])
-            .with_min_inner_size([480.0, 560.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -1371,6 +1378,19 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
+}
+
+/// Window/taskbar icon — decoded from the same PNG the exe icon is built from.
+fn load_icon() -> Option<egui::IconData> {
+    let img = image::load_from_memory(include_bytes!("../assets/icon_256.png"))
+        .ok()?
+        .into_rgba8();
+    let (w, h) = (img.width(), img.height());
+    Some(egui::IconData {
+        rgba: img.into_raw(),
+        width: w,
+        height: h,
+    })
 }
 
 // ---------------------------------------------------------------------------
