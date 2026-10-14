@@ -617,6 +617,9 @@ impl eframe::App for App {
                     egui::vec2(ui.available_width(), 195.0),
                     Sense::click(),
                 );
+                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let hov = resp.hovered();
+                let active = dragging || hov;
                 let p = ui.painter();
                 let cr = CornerRadius::same(12);
                 p.rect_stroke(
@@ -631,7 +634,15 @@ impl eframe::App for App {
                     Stroke::new(1.0_f32, theme::HAIRLINE),
                     StrokeKind::Middle,
                 );
-                p.rect_filled(rect, cr, theme::CARD);
+                p.rect_filled(
+                    rect,
+                    cr,
+                    if hov && !dragging {
+                        Color32::from_rgb(240, 249, 252)
+                    } else {
+                        theme::CARD
+                    },
+                );
                 if dragging {
                     p.rect_stroke(rect, cr, Stroke::new(2.0_f32, theme::ACCENT), StrokeKind::Middle);
                     // process-color strip on the edge of the sheet
@@ -647,6 +658,13 @@ impl eframe::App for App {
                             *c,
                         );
                     }
+                } else if hov {
+                    p.rect_stroke(
+                        rect,
+                        cr,
+                        Stroke::new(1.5_f32, Color32::from_rgb(120, 190, 210)),
+                        StrokeKind::Middle,
+                    );
                 } else {
                     p.rect_stroke(rect, cr, Stroke::new(1.0_f32, theme::HAIRLINE), StrokeKind::Middle);
                 }
@@ -655,14 +673,14 @@ impl eframe::App for App {
                 p.circle_filled(
                     egui::pos2(c.x, c.y - 50.0),
                     16.0,
-                    if dragging { theme::ACCENT_SOFT } else { theme::GRAY_BG },
+                    if active { theme::ACCENT_SOFT } else { theme::GRAY_BG },
                 );
                 p.text(
                     egui::pos2(c.x, c.y - 50.0),
                     Align2::CENTER_CENTER,
                     "↓",
                     FontId::proportional(17.0),
-                    if dragging { theme::ACCENT } else { theme::INK_SOFT },
+                    if active { theme::ACCENT } else { theme::INK_SOFT },
                 );
                 p.text(
                     egui::pos2(c.x + shift, c.y + 12.0),
@@ -727,6 +745,7 @@ impl eframe::App for App {
                                 .corner_radius(CornerRadius::same(9))
                                 .min_size(egui::vec2(0.0, 36.0)),
                             )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
                             self.stop_flag.store(true, AtomicOrdering::Relaxed);
@@ -747,6 +766,7 @@ impl eframe::App for App {
                                 .corner_radius(CornerRadius::same(9))
                                 .min_size(egui::vec2(0.0, 36.0)),
                             )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
                             action_start = true;
@@ -759,6 +779,7 @@ impl eframe::App for App {
                                 .corner_radius(CornerRadius::same(9))
                                 .min_size(egui::vec2(0.0, 36.0)),
                         )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         action_clear = true;
@@ -915,21 +936,41 @@ impl eframe::App for App {
                                             FontId::monospace(11.5),
                                             theme::INK_SOFT,
                                         );
-                                        // file name (truncated, full path on hover)
+                                        // file name — painted directly for pixel-perfect
+                                        // vertical centering; truncated with an ellipsis,
+                                        // full path shown in a single tooltip
                                         let name_rect = egui::Rect::from_min_max(
                                             egui::pos2(alloc.left() + 54.0, alloc.top() + 3.0),
                                             egui::pos2(alloc.right() - RIGHT_ZONE, alloc.bottom() - 3.0),
                                         );
-                                        let lbl = egui::Label::new(
-                                            RichText::new(name.as_str())
-                                                .monospace()
-                                                .size(12.5)
-                                                .color(theme::INK),
+                                        let font = FontId::monospace(12.5);
+                                        let mut gal = ui
+                                            .painter()
+                                            .layout_no_wrap(name.as_str().to_owned(), font.clone(), theme::INK);
+                                        if gal.size().x > name_rect.width() {
+                                            let chars: Vec<char> = name.chars().collect();
+                                            let mut cut = chars.len();
+                                            while cut > 1 {
+                                                cut -= 1;
+                                                let probe: String =
+                                                    chars[..cut].iter().collect::<String>() + "…";
+                                                gal = ui.painter().layout_no_wrap(probe, font.clone(), theme::INK);
+                                                if gal.size().x <= name_rect.width() {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        ui.painter().galley(
+                                            egui::pos2(name_rect.left(), cy - gal.size().y / 2.0),
+                                            gal,
+                                            theme::INK,
+                                        );
+                                        ui.interact(
+                                            name_rect,
+                                            egui::Id::new(("name", path)),
+                                            Sense::hover(),
                                         )
-                                        .truncate()
-                                        .show_tooltip_when_elided(false);
-                                        let name_resp = ui.put(name_rect, lbl);
-                                        name_resp.on_hover_text(path.display().to_string());
+                                        .on_hover_text(path.display().to_string());
                                         // status badge
                                         let (txt, tx, bc) = status.badge();
                                         let galley = ui
@@ -991,10 +1032,10 @@ impl eframe::App for App {
                                                 rm = Some(i);
                                             }
                                         }
-                                        // separator between rows, in the gap
-                                        // (halfway to the next row)
+                                        // separator exactly on the row boundary —
+                                        // equal distance to both rows
                                         if i + 1 < total {
-                                            let y = alloc.bottom() + 1.0;
+                                            let y = alloc.bottom();
                                             ui.painter().line_segment(
                                                 [
                                                     egui::pos2(alloc.left() + 14.0, y),
@@ -1024,6 +1065,14 @@ impl eframe::App for App {
             );
             let mut open = self.settings_open;
             let mut close = false;
+            // exact window height for the content: base + optional hint/engine lines
+            let mut h = 204.0;
+            if self.printing() {
+                h += 17.0;
+            }
+            if self.engine.is_some() {
+                h += 17.0;
+            }
             let win_frame = egui::Frame::window(&ctx.style())
                 .inner_margin(egui::Margin::same(14))
                 .corner_radius(CornerRadius::same(10))
@@ -1032,7 +1081,7 @@ impl eframe::App for App {
             egui::Window::new("Settings")
                 .id(egui::Id::new("settings-window"))
                 .default_pos(pos)
-                .auto_sized()
+                .fixed_size([390.0, h])
                 .frame(win_frame)
                 .resizable(false)
                 .collapsible(false)
@@ -1081,7 +1130,8 @@ impl eframe::App for App {
                         RichText::new("Print immediately after adding files")
                             .size(13.0)
                             .color(theme::INK),
-                    );
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                     ui.add_space(4.0);
                     if let Some(engine) = &self.engine {
                         ui.label(
@@ -1100,6 +1150,7 @@ impl eframe::App for App {
                                 .corner_radius(CornerRadius::same(8))
                                 .min_size(egui::vec2(88.0, 28.0)),
                             )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
                             close = true;

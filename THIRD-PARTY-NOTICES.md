@@ -1,11 +1,11 @@
-# Licencje składników zewnętrznych (third-party notices)
+# Third-Party Notices
 
-Ten program zawiera bibliotekę **pdfium.dll** — oficjalne, automatyczne budowanie
-projektu PDFium: https://github.com/bblanchon/pdfium-binaries
+This application bundles **pdfium.dll**, an automated build of the PDFium
+project: https://github.com/bblanchon/pdfium-binaries
 
 ---
 
-## Licencja pakietu pdfium-binaries (MIT)
+## pdfium-binaries package (MIT)
 ```
 Copyright 2014-2025 Benoit Blanchon
 
