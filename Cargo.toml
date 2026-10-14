@@ -1,0 +1,24 @@
+[package]
+name = "easytoprint"
+version = "1.2.0"
+edition = "2021"
+description = "Masowy druk PDF - kolejka z drag & drop"
+
+[dependencies]
+eframe = "0.33"
+pdfium-render = "0.9"
+rfd = "0.15"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Graphics_Printing",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

@@ -1,0 +1,9 @@
+/target
+PDFtoPrinter.exe
+pdfium.dll
+dist/*.exe
+dist/*.dll
+ui_*.png
+*.zip
+*.tgz
+etp_test_out.pdf
