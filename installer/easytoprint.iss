@@ -2,7 +2,7 @@
 ; Build: ISCC.exe installer\easytoprint.iss  (from the repo root)
 
 #define MyAppName "EasyToPrint"
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.2.1"
 #define MyAppPublisher "TypowyPiteR"
 #define MyAppURL "https://github.com/TypowyPiteR/easytoprint"
 #define MyAppExeName "easytoprint.exe"

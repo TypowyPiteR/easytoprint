@@ -473,7 +473,7 @@ fn faded(c: Color32, t: f32) -> Color32 {
 
 /// Custom window title bar (native decorations are off).
 /// Drawn edge-to-edge by the caller (TopBottomPanel with zero margins).
-fn title_bar(ui: &mut egui::Ui, title: &str) {
+fn title_bar(ui: &mut egui::Ui, title: &str, corner: u8) {
     let h = 40.0;
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), h),
@@ -538,7 +538,17 @@ fn title_bar(ui: &mut egui::Ui, title: &str) {
             }
             _ => {
                 if hov {
-                    p.rect_filled(br, CornerRadius::same(0), Color32::from_rgb(232, 17, 35));
+                    // rounded to match the window corner (no square poking out)
+                    p.rect_filled(
+                        br,
+                        CornerRadius {
+                            nw: 0,
+                            ne: corner,
+                            sw: 0,
+                            se: 0,
+                        },
+                        Color32::from_rgb(232, 17, 35),
+                    );
                 }
                 let col = if hov { Color32::WHITE } else { theme::INK_SOFT };
                 // same visual weight as the other buttons: two 1.4 px strokes
@@ -961,7 +971,7 @@ impl eframe::App for App {
                     }),
             )
             .show(ctx, |ui| {
-                title_bar(ui, "EasyToPrint — bulk PDF printing");
+                title_bar(ui, "EasyToPrint — bulk PDF printing", corner);
             });
 
         egui::CentralPanel::default()
@@ -1686,19 +1696,12 @@ impl eframe::App for App {
                 .collapsible(false)
                 .open(&mut open)
                 .show(ctx, |ui| {
-                    // custom header, identical in style to the app title bar
-                    let (hrect, hresp) = ui.allocate_exact_size(
+                    // custom header, identical in style to the app title bar;
+                    // the window stays pinned to its default position
+                    let (hrect, _) = ui.allocate_exact_size(
                         egui::vec2(ui.available_width(), 40.0),
-                        Sense::click_and_drag(),
+                        Sense::hover(),
                     );
-                    let layer = ui.layer_id();
-                    let delta = hresp.drag_delta();
-                    if delta != egui::Vec2::ZERO {
-                        ui.ctx().transform_layer_shapes(
-                            layer,
-                            egui::emath::TSTransform::from_translation(delta),
-                        );
-                    }
                     let p = ui.painter();
                     p.text(
                         egui::pos2(hrect.left() + 14.0, hrect.center().y),
@@ -1723,7 +1726,17 @@ impl eframe::App for App {
                         ui.interact(cbr, egui::Id::new("settings-close"), Sense::click());
                     let chov = cresp.hovered();
                     if chov {
-                        p.rect_filled(cbr, CornerRadius::same(0), Color32::from_rgb(232, 17, 35));
+                        // rounded to match the modal corner
+                        p.rect_filled(
+                            cbr,
+                            CornerRadius {
+                                nw: 0,
+                                ne: 10,
+                                sw: 0,
+                                se: 0,
+                            },
+                            Color32::from_rgb(232, 17, 35),
+                        );
                     }
                     let ccol = if chov { Color32::WHITE } else { theme::INK_SOFT };
                     let cc = cbr.center();
