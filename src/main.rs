@@ -415,14 +415,15 @@ fn progress_bar(ui: &mut egui::Ui, frac: f32, text: &str) {
     }
     let galley = p.layout_no_wrap(text.to_owned(), FontId::proportional(12.5), theme::INK);
     let pos = rect.center() - galley.size() / 2.0;
-    // dark part: over the unfilled track; white part: over the accent fill
+    // ink over the unfilled track, white over the accent fill
     let rest = egui::Rect::from_min_max(
         egui::pos2(rect.left() + rect.width() * frac, rect.top()),
         rect.max,
     );
     p.with_clip_rect(rest).galley(pos, galley.clone(), theme::INK);
     if let Some(f) = fill {
-        p.with_clip_rect(f).galley(pos, galley, Color32::WHITE);
+        p.with_clip_rect(f)
+            .galley_with_override_text_color(pos, galley, Color32::WHITE);
     }
 }
 
@@ -613,7 +614,7 @@ impl eframe::App for App {
                 // ---- Drop zone: a sheet of paper on a stack ----
                 let dragging = !hovered_files.is_empty();
                 let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), 150.0),
+                    egui::vec2(ui.available_width(), 195.0),
                     Sense::click(),
                 );
                 let p = ui.painter();
@@ -652,19 +653,19 @@ impl eframe::App for App {
                 let c = rect.center();
                 let shift = if dragging { 8.0 } else { 0.0 };
                 p.circle_filled(
-                    egui::pos2(c.x, c.y - 38.0),
+                    egui::pos2(c.x, c.y - 50.0),
                     16.0,
                     if dragging { theme::ACCENT_SOFT } else { theme::GRAY_BG },
                 );
                 p.text(
-                    egui::pos2(c.x, c.y - 38.0),
+                    egui::pos2(c.x, c.y - 50.0),
                     Align2::CENTER_CENTER,
                     "↓",
                     FontId::proportional(17.0),
                     if dragging { theme::ACCENT } else { theme::INK_SOFT },
                 );
                 p.text(
-                    egui::pos2(c.x + shift, c.y + 8.0),
+                    egui::pos2(c.x + shift, c.y + 12.0),
                     Align2::CENTER_CENTER,
                     if dragging {
                         "Drop to add to the queue"
@@ -682,7 +683,7 @@ impl eframe::App for App {
                     "or click here to browse files".to_string()
                 };
                 p.text(
-                    egui::pos2(c.x + shift, c.y + 38.0),
+                    egui::pos2(c.x + shift, c.y + 46.0),
                     Align2::CENTER_CENTER,
                     sub,
                     FontId::proportional(12.0),
@@ -925,7 +926,8 @@ impl eframe::App for App {
                                                 .size(12.5)
                                                 .color(theme::INK),
                                         )
-                                        .truncate();
+                                        .truncate()
+                                        .show_tooltip_when_elided(false);
                                         let name_resp = ui.put(name_rect, lbl);
                                         name_resp.on_hover_text(path.display().to_string());
                                         // status badge
@@ -956,27 +958,36 @@ impl eframe::App for App {
                                             )
                                             .on_hover_text(t);
                                         }
-                                        // remove button — compact, vertically centered
+                                        // remove control: borderless red ×,
+                                        // soft red circle + hand cursor on hover
                                         if *status != Status::Printing {
-                                            let xrect = egui::Rect::from_min_size(
-                                                egui::pos2(
-                                                    alloc.right() - 34.0,
-                                                    cy - 11.0,
-                                                ),
-                                                egui::vec2(26.0, 22.0),
+                                            let xr = egui::Rect::from_center_size(
+                                                egui::pos2(alloc.right() - 21.0, cy),
+                                                egui::vec2(28.0, 28.0),
                                             );
-                                            if ui
-                                                .put(
-                                                    xrect,
-                                                    egui::Button::new(
-                                                        RichText::new("×")
-                                                            .size(12.0)
-                                                            .color(theme::INK_SOFT),
-                                                    )
-                                                    .corner_radius(CornerRadius::same(7)),
-                                                )
-                                                .clicked()
-                                            {
+                                            let resp = ui.interact(
+                                                xr,
+                                                egui::Id::new(("remove", path)),
+                                                Sense::click(),
+                                            );
+                                            let hov = resp.hovered();
+                                            if hov {
+                                                ui.painter().circle_filled(
+                                                    xr.center(),
+                                                    12.0,
+                                                    theme::MAGENTA_BG,
+                                                );
+                                            }
+                                            ui.painter().text(
+                                                xr.center(),
+                                                Align2::CENTER_CENTER,
+                                                "×",
+                                                FontId::proportional(15.0),
+                                                if hov { theme::MAGENTA_TX } else { theme::INK_SOFT },
+                                            );
+                                            let resp = resp
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                            if resp.clicked() {
                                                 rm = Some(i);
                                             }
                                         }
@@ -1013,15 +1024,21 @@ impl eframe::App for App {
             );
             let mut open = self.settings_open;
             let mut close = false;
+            let win_frame = egui::Frame::window(&ctx.style())
+                .inner_margin(egui::Margin::same(14))
+                .corner_radius(CornerRadius::same(10))
+                .stroke(Stroke::new(1.0_f32, theme::HAIRLINE))
+                .fill(theme::CARD);
             egui::Window::new("Settings")
                 .id(egui::Id::new("settings-window"))
                 .default_pos(pos)
                 .auto_sized()
+                .frame(win_frame)
                 .resizable(false)
                 .collapsible(false)
-                .min_width(360.0)
                 .open(&mut open)
                 .show(ctx, |ui| {
+                    ui.set_width(336.0);
                     ui.add_space(2.0);
                     ui.label(
                         RichText::new("Printer")
@@ -1039,7 +1056,7 @@ impl eframe::App for App {
                     ui.add_enabled_ui(!self.printing(), |ui| {
                         egui::ComboBox::from_id_salt("printer")
                             .selected_text(RichText::new(selected).size(13.5).color(theme::INK))
-                            .width(ui.available_width())
+                            .width(336.0)
                             .show_ui(ui, |ui| {
                                 let def_label = match &self.default_printer {
                                     Some(d) => format!("Default ({d})"),
@@ -1115,7 +1132,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("EasyToPrint — bulk PDF printing")
-            .with_inner_size([620.0, 780.0])
+            .with_inner_size([620.0, 830.0])
             .with_min_inner_size([480.0, 560.0]),
         ..Default::default()
     };
