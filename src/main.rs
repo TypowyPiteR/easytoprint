@@ -368,16 +368,17 @@ fn badge(ui: &mut egui::Ui, text: &str, tx: Color32, bg: Color32) -> egui::Respo
     resp
 }
 
-/// The four CMYK squares — the app's signature mark.
+/// The four CMYK squares in a 2×2 grid — the app's signature mark
+/// (identical to the application icon).
 fn cmyk_mark(ui: &mut egui::Ui, size: f32) {
-    let gap = size * 0.28;
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(4.0 * size + 3.0 * gap, size),
-        Sense::hover(),
-    );
-    let y = rect.center().y - size / 2.0;
+    let gap = size * 0.22;
+    let total = 2.0 * size + gap;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(total, total), Sense::hover());
+    let x0 = rect.left();
+    let y0 = rect.top();
     for (i, c) in theme::CMYK.iter().enumerate() {
-        let x = rect.left() + i as f32 * (size + gap);
+        let x = x0 + (i as f32 % 2.0) * (size + gap);
+        let y = y0 + ((i as f32 / 2.0).floor()) * (size + gap);
         ui.painter().rect_filled(
             egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(size, size)),
             CornerRadius::same(2),
@@ -443,6 +444,111 @@ fn gear_button(ui: &mut egui::Ui, tooltip: &str) -> egui::Response {
 /// Replaces `{name}` placeholders in a translated template.
 fn fill(template: &str, name: &str, value: &str) -> String {
     template.replace(&format!("{{{name}}}"), value)
+}
+
+/// Linear blend of two colors.
+fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let ch = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        ch(a.r(), b.r()),
+        ch(a.g(), b.g()),
+        ch(a.b(), b.b()),
+        ch(a.a(), b.a()),
+    )
+}
+
+/// Color with reduced alpha (for fade-in animations).
+fn faded(c: Color32, t: f32) -> Color32 {
+    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (c.a() as f32 * t) as u8)
+}
+
+/// Custom window title bar (native decorations are off).
+fn title_bar(ui: &mut egui::Ui, title: &str) {
+    let h = 40.0;
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), h),
+        Sense::click_and_drag(),
+    );
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(0), theme::CARD);
+    p.line_segment(
+        [rect.left_bottom(), egui::pos2(rect.right(), rect.bottom())],
+        Stroke::new(1.0_f32, theme::HAIRLINE),
+    );
+    p.text(
+        egui::pos2(rect.left() + 14.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        title,
+        FontId::proportional(12.5),
+        theme::INK,
+    );
+    // window buttons: minimize, maximize, close (right to left)
+    let btn_w = 42.0;
+    for (i, kind) in ['m', 'z', 'x'].iter().enumerate() {
+        let x1 = rect.right() - (3 - i) as f32 * btn_w;
+        let br = egui::Rect::from_min_max(
+            egui::pos2(x1, rect.top()),
+            egui::pos2(x1 + btn_w, rect.bottom()),
+        );
+        let bid = egui::Id::new(("winbtn", kind));
+        let bresp = ui.interact(br, bid, Sense::click());
+        let hov = bresp.hovered();
+        let center = br.center();
+        match kind {
+            'm' => {
+                if hov {
+                    p.rect_filled(br, CornerRadius::same(0), theme::GRAY_BG);
+                }
+                let col = if hov { theme::INK } else { theme::INK_SOFT };
+                p.line_segment(
+                    [egui::pos2(center.x - 5.0, center.y), egui::pos2(center.x + 5.0, center.y)],
+                    Stroke::new(1.4_f32, col),
+                );
+                if bresp.clicked() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                }
+            }
+            'z' => {
+                if hov {
+                    p.rect_filled(br, CornerRadius::same(0), theme::GRAY_BG);
+                }
+                let col = if hov { theme::INK } else { theme::INK_SOFT };
+                p.rect_stroke(
+                    egui::Rect::from_center_size(center, egui::vec2(10.0, 10.0)),
+                    CornerRadius::same(1),
+                    Stroke::new(1.3_f32, col),
+                    StrokeKind::Middle,
+                );
+                if bresp.clicked() {
+                    let maximized = ui
+                        .ctx()
+                        .input(|i| i.viewport().maximized.unwrap_or(false));
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                }
+            }
+            _ => {
+                if hov {
+                    p.rect_filled(br, CornerRadius::same(0), Color32::from_rgb(232, 17, 35));
+                }
+                let col = if hov { Color32::WHITE } else { theme::INK_SOFT };
+                p.text(center, Align2::CENTER_CENTER, "×", FontId::proportional(15.0), col);
+                if bresp.clicked() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        }
+    }
+    // drag to move; double-click toggles maximize
+    if resp.dragged() {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+    if resp.double_clicked() {
+        let maximized = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+    }
 }
 
 /// All visible strings for one frame, translated up front.
@@ -617,6 +723,8 @@ struct App {
     lang: Lang,
     /// (file name, display name) of every language in lang/
     lang_files: Vec<(String, String)>,
+    /// rows that already played their appear-animation
+    row_seen: std::collections::HashSet<PathBuf>,
 }
 
 impl App {
@@ -685,6 +793,7 @@ impl App {
             },
             lang,
             lang_files,
+            row_seen: std::collections::HashSet::new(),
         }
     }
 
@@ -804,9 +913,13 @@ impl eframe::App for App {
             .frame(
                 egui::Frame::default()
                     .fill(theme::PAPER)
-                    .inner_margin(egui::Margin::same(16)),
+                    .inner_margin(egui::Margin::same(22)),
             )
             .show(ctx, |ui| {
+                // ---- custom title bar ----
+                title_bar(ui, "EasyToPrint — bulk PDF printing");
+                ui.add_space(8.0);
+
                 // ---- Header: CMYK + title, counter and gear to the right ----
                 ui.horizontal(|ui| {
                     cmyk_mark(ui, 8.0);
@@ -828,43 +941,47 @@ impl eframe::App for App {
                 });
                 ui.add_space(10.0);
 
-                // ---- Drop zone: a sheet of paper on a stack ----
+                // ---- Drop zone: a single accent card (the Print-button color) ----
                 let dragging = !hovered_files.is_empty();
                 let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), 195.0),
+                    egui::vec2(ui.available_width(), 190.0),
                     Sense::click(),
                 );
                 let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                let hov = resp.hovered();
-                let active = dragging || hov;
+                let hov_t = ui.ctx().animate_value_with_time(
+                    egui::Id::new("drop_hover"),
+                    if resp.hovered() { 1.0 } else { 0.0 },
+                    0.15,
+                );
+                let sub = if dragging {
+                    let names = hovered_files.join(", ");
+                    let names: String = names.chars().take(60).collect();
+                    fill(&t.drop_add_tpl, "names", &names)
+                } else {
+                    t.drop_sub.clone()
+                };
                 let p = ui.painter();
                 let cr = CornerRadius::same(12);
-                p.rect_stroke(
-                    rect.translate(egui::vec2(7.0, 7.0)),
-                    cr,
-                    Stroke::new(1.0_f32, theme::HAIRLINE),
-                    StrokeKind::Middle,
-                );
-                p.rect_stroke(
-                    rect.translate(egui::vec2(3.5, 3.5)),
-                    cr,
-                    Stroke::new(1.0_f32, theme::HAIRLINE),
-                    StrokeKind::Middle,
-                );
-                p.rect_filled(
-                    rect,
-                    cr,
-                    if hov && !dragging {
-                        Color32::from_rgb(240, 249, 252)
-                    } else {
-                        theme::CARD
-                    },
-                );
+                let base = mix(theme::ACCENT, Color32::from_rgb(17, 141, 172), hov_t);
+                let zone_fill = if dragging {
+                    Color32::from_rgb(11, 100, 124)
+                } else {
+                    base
+                };
+                p.rect_filled(rect, cr, zone_fill);
                 if dragging {
-                    p.rect_stroke(rect, cr, Stroke::new(2.0_f32, theme::ACCENT), StrokeKind::Middle);
-                    // process-color strip on the edge of the sheet
-                    let top = rect.top() + 14.0;
-                    let seg = (rect.height() - 28.0) / 4.0;
+                    p.rect_stroke(
+                        rect,
+                        cr,
+                        Stroke::new(
+                            2.0_f32,
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 110),
+                        ),
+                        StrokeKind::Middle,
+                    );
+                    // process-color strip on the edge of the card
+                    let top = rect.top() + 16.0;
+                    let seg = (rect.height() - 32.0) / 4.0;
                     for (i, c) in theme::CMYK.iter().enumerate() {
                         p.rect_filled(
                             egui::Rect::from_min_size(
@@ -875,50 +992,36 @@ impl eframe::App for App {
                             *c,
                         );
                     }
-                } else if hov {
-                    p.rect_stroke(
-                        rect,
-                        cr,
-                        Stroke::new(1.5_f32, Color32::from_rgb(120, 190, 210)),
-                        StrokeKind::Middle,
-                    );
-                } else {
-                    p.rect_stroke(rect, cr, Stroke::new(1.0_f32, theme::HAIRLINE), StrokeKind::Middle);
                 }
+                // compact cluster: arrow circle right above the texts
                 let c = rect.center();
-                let shift = if dragging { 8.0 } else { 0.0 };
+                let white = Color32::WHITE;
+                let soft = Color32::from_rgba_unmultiplied(255, 255, 255, 205);
                 p.circle_filled(
-                    egui::pos2(c.x, c.y - 50.0),
+                    egui::pos2(c.x, c.y - 32.0),
                     16.0,
-                    if active { theme::ACCENT_SOFT } else { theme::GRAY_BG },
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 46),
                 );
                 p.text(
-                    egui::pos2(c.x, c.y - 50.0),
+                    egui::pos2(c.x, c.y - 31.0),
                     Align2::CENTER_CENTER,
                     "↓",
                     FontId::proportional(17.0),
-                    if active { theme::ACCENT } else { theme::INK_SOFT },
+                    white,
                 );
                 p.text(
-                    egui::pos2(c.x + shift, c.y + 12.0),
+                    egui::pos2(c.x, c.y + 9.0),
                     Align2::CENTER_CENTER,
                     if dragging { &t.drop_active } else { &t.drop_main },
                     FontId::proportional(16.0),
-                    theme::INK,
+                    white,
                 );
-                let sub = if dragging {
-                    let names = hovered_files.join(", ");
-                    let names: String = names.chars().take(60).collect();
-                    fill(&t.drop_add_tpl, "names", &names)
-                } else {
-                    t.drop_sub.clone()
-                };
                 p.text(
-                    egui::pos2(c.x + shift, c.y + 46.0),
+                    egui::pos2(c.x, c.y + 36.0),
                     Align2::CENTER_CENTER,
-                    sub,
+                    &sub,
                     FontId::proportional(12.0),
-                    if dragging { theme::ACCENT } else { theme::INK_SOFT },
+                    soft,
                 );
                 if resp.clicked() {
                     if let Some(paths) = rfd::FileDialog::new()
@@ -1020,7 +1123,13 @@ impl eframe::App for App {
                     if errors > 0 {
                         text.push_str(&fill(&t.prog_errors_tpl, "n", &errors.to_string()));
                     }
-                    progress_bar(ui, frac, &text);
+                    // smooth progress: the bar eases toward the real value
+                    let frac_anim = ui.ctx().animate_value_with_time(
+                        egui::Id::new("progress_fill"),
+                        frac,
+                        0.45,
+                    );
+                    progress_bar(ui, frac_anim, &text);
                     if let Some((_, name, _)) = snapshot
                         .iter()
                         .find(|(_, _, s)| *s == Status::Printing)
@@ -1117,6 +1226,18 @@ impl eframe::App for App {
                                             egui::vec2(ui.available_width(), ROW_H),
                                             Sense::hover(),
                                         );
+                                        // appear animation: slide in + fade in
+                                        let row_id = egui::Id::new(("row_in", path));
+                                        if self.row_seen.insert(path.clone()) {
+                                            // seed the animation at 0 on first sight
+                                            ui.ctx()
+                                                .animate_value_with_time(row_id, 0.0, 1e-9);
+                                        }
+                                        let ta = ui
+                                            .ctx()
+                                            .animate_value_with_time(row_id, 1.0, 0.22)
+                                            .clamp(0.0, 1.0);
+                                        let slide = (1.0 - ta) * -10.0;
                                         if first_top.is_none() {
                                             first_top = Some(cell.top());
                                         }
@@ -1152,8 +1273,11 @@ impl eframe::App for App {
                                             _ => None,
                                         };
                                         if let Some(bg) = bg {
-                                            ui.painter()
-                                                .rect_filled(cell, CornerRadius::same(6), bg);
+                                            ui.painter().rect_filled(
+                                                cell,
+                                                CornerRadius::same(6),
+                                                faded(bg, ta),
+                                            );
                                         }
                                         if debug_lines {
                                             let p = ui.painter();
@@ -1181,14 +1305,20 @@ impl eframe::App for App {
                                             );
                                         }
                                         let cy = cell.center().y;
+                                        // gentle pulse while the row is being printed
+                                        let pulse = if *status == Status::Printing {
+                                            0.72 + 0.28 * (ui.input(|i| i.time as f32) * 2.2).sin()
+                                        } else {
+                                            1.0
+                                        };
                                         // row number (+1 px optical: digits have no
                                         // descenders, the line box sits low)
                                         ui.painter().text(
-                                            egui::pos2(cell.left() + 38.0, cy + 1.0),
+                                            egui::pos2(cell.left() + 38.0 + slide, cy + 1.0),
                                             Align2::RIGHT_CENTER,
                                             format!("{}", i + 1),
                                             FontId::monospace(11.5),
-                                            theme::INK_SOFT,
+                                            faded(theme::INK_SOFT, ta),
                                         );
                                         // file name (+1.5 px optical nudge: centers the
                                         // glyphs, not the line box)
@@ -1213,13 +1343,13 @@ impl eframe::App for App {
                                                 }
                                             }
                                         }
-                                        ui.painter().galley(
+                                        ui.painter().galley_with_override_text_color(
                                             egui::pos2(
-                                                name_rect.left(),
+                                                name_rect.left() + slide,
                                                 cy - gal.size().y / 2.0 + 1.5,
                                             ),
                                             gal,
-                                            theme::INK,
+                                            faded(theme::INK, ta),
                                         );
                                         ui.interact(
                                             name_rect,
@@ -1238,18 +1368,21 @@ impl eframe::App for App {
                                             );
                                         let bs = galley.size() + egui::vec2(16.0, 7.0);
                                         let brect = egui::Rect::from_min_size(
-                                            egui::pos2(cell.right() - 46.0 - bs.x, cy - bs.y / 2.0),
+                                            egui::pos2(
+                                                cell.right() - 46.0 - bs.x + slide,
+                                                cy - bs.y / 2.0,
+                                            ),
                                             bs,
                                         );
                                         ui.painter().rect_filled(
                                             brect,
                                             CornerRadius::same((bs.y / 2.0) as u8),
-                                            bc,
+                                            faded(bc, ta * pulse),
                                         );
-                                        ui.painter().galley(
+                                        ui.painter().galley_with_override_text_color(
                                             brect.center() - galley.size() / 2.0,
                                             galley,
-                                            tx,
+                                            faded(tx, ta * pulse),
                                         );
                                         if status.tooltip_key().is_some() {
                                             let tip = match status {
@@ -1269,7 +1402,7 @@ impl eframe::App for App {
                                         // soft red circle + hand cursor on hover
                                         if *status != Status::Printing {
                                             let xr = egui::Rect::from_center_size(
-                                                egui::pos2(cell.right() - 21.0, cy),
+                                                egui::pos2(cell.right() - 21.0 + slide, cy),
                                                 egui::vec2(28.0, 28.0),
                                             );
                                             let resp = ui.interact(
@@ -1290,7 +1423,10 @@ impl eframe::App for App {
                                                 Align2::CENTER_CENTER,
                                                 "×",
                                                 FontId::proportional(15.0),
-                                                if hov { theme::MAGENTA_TX } else { theme::INK_SOFT },
+                                                faded(
+                                                    if hov { theme::MAGENTA_TX } else { theme::INK_SOFT },
+                                                    ta,
+                                                ),
                                             );
                                             let resp = resp
                                                 .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -1645,7 +1781,8 @@ fn main() -> eframe::Result<()> {
     let icon = load_icon();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("EasyToPrint — bulk PDF printing")
-        .with_inner_size([620.0, 830.0])
+        .with_decorations(false)
+        .with_inner_size([620.0, 860.0])
         .with_min_inner_size([480.0, 560.0]);
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
