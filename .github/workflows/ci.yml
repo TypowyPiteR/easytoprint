@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # mirror the local build environment: GNU toolchain + MSYS2 mingw-w64
+      # (windres from binutils embeds the exe icon; gcc links the GNU build)
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-binutils
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Use the GNU toolchain by default
+        shell: pwsh
+        run: rustup default stable-x86_64-pc-windows-gnu
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build and test
+        shell: msys2 {0}
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo build --release
+          cargo test --release
+
+      - name: Package artifact
+        shell: msys2 {0}
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p artifact/lib artifact/lang
+          cp target/release/easytoprint.exe artifact/
+          cp lang/*.json artifact/lang/
+          curl -sL -o pdfium.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x64.tgz
+          tar -xzf pdfium.tgz bin/pdfium.dll
+          mv bin/pdfium.dll artifact/lib/
+          rm -rf bin pdfium.tgz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: easytoprint-win64
+          path: artifact/
