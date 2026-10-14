@@ -114,3 +114,83 @@ pub fn lang_dir() -> Option<PathBuf> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every key the UI asks for must exist in the embedded English base.
+    const UI_KEYS: &[&str] = &[
+        "files.one", "files.many",
+        "drop.main", "drop.sub", "drop.active", "drop.add",
+        "btn.print", "btn.printN", "btn.printing", "btn.stop", "btn.clear",
+        "warn.engine",
+        "progress.sent", "progress.errors", "progress.now",
+        "queue.empty.title", "queue.empty.sub", "queue.col.file", "queue.col.status",
+        "status.waiting", "status.printing", "status.sent", "status.error",
+        "status.sent.tip", "status.error.tip",
+        "settings.title", "settings.group.general", "settings.group.printing",
+        "settings.language", "settings.printer", "settings.printer.default",
+        "settings.printer.defaultNamed", "settings.nextJob", "settings.autostart",
+        "settings.duplex", "settings.color", "settings.paper", "settings.paper.default",
+        "settings.legacyNote", "settings.close", "settings.tip",
+        "duplex.printer", "duplex.simplex", "duplex.long", "duplex.short",
+        "color.printer", "color.color", "color.grayscale",
+    ];
+
+    #[test]
+    fn embedded_english_covers_all_ui_keys() {
+        let en = Lang::english();
+        for key in UI_KEYS {
+            assert_ne!(&en.tr(key), key, "missing key in embedded English: {key}");
+        }
+    }
+
+    #[test]
+    fn language_files_override_and_fall_back() {
+        // a language file overlays the embedded English base: overridden keys
+        // use the translation, everything else falls back to English
+        let mut lang = Lang::english();
+        lang.strings.insert("drop.main".into(), "PRZECIĄGNIJ".into());
+        assert_eq!(lang.tr("drop.main"), "PRZECIĄGNIJ");
+        assert_eq!(lang.tr("btn.print"), "Print");
+    }
+
+    #[test]
+    fn shipped_language_files_are_valid() {
+        let en = Lang::english();
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("lang");
+        let mut count = 0;
+        for entry in std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+            .flatten()
+        {
+            let path = entry.path();
+            if !path.extension().map(|e| e == "json").unwrap_or(false) {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let v: serde_json::Value = serde_json::from_str(&text)
+                .unwrap_or_else(|e| panic!("{}: invalid JSON: {e}", path.display()));
+            assert!(
+                v.get("name").and_then(|n| n.as_str()).is_some(),
+                "{}: missing \"name\"",
+                path.display()
+            );
+            if let Some(obj) = v.get("strings").and_then(|s| s.as_object()) {
+                assert!(!obj.is_empty(), "{}: no strings", path.display());
+                for k in obj.keys() {
+                    assert_ne!(
+                        en.tr(k),
+                        k.as_str(),
+                        "{}: unknown key {k} (typo? not in the English base)",
+                        path.display()
+                    );
+                }
+            }
+            count += 1;
+        }
+        // all 24 official EU languages ship with the app
+        assert!(count >= 24, "expected 24 EU language files, found {count}");
+    }
+}

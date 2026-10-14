@@ -18,7 +18,7 @@ status of every file. Each PDF arrives as a separate print job.
 - **Clear** — empties the queue, **×** — removes single files
 - optional **"Print immediately after adding files"** mode
 - **multiple languages** — plain JSON files in `lang/`; drop in a new
-  `xx.json` to add a language (English and Polish are included);
+  `xx.json` to add a language (all 24 official EU languages are included);
   the chosen language and all settings are remembered
 - paper-size override: ISO A0–A7, B0–B6, C4–C6, DL and Letter
 - duplex and color overrides (printer default / one-sided / two-sided,
