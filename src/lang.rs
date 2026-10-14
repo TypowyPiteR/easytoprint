@@ -133,6 +133,7 @@ mod tests {
         "settings.language", "settings.printer", "settings.printer.default",
         "settings.printer.defaultNamed", "settings.nextJob", "settings.autostart",
         "settings.duplex", "settings.color", "settings.paper", "settings.paper.default",
+        "settings.paper.auto",
         "settings.legacyNote", "settings.close", "settings.tip",
         "duplex.printer", "duplex.simplex", "duplex.long", "duplex.short",
         "color.printer", "color.color", "color.grayscale",

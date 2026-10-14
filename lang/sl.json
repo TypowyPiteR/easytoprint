@@ -39,6 +39,7 @@
     "settings.color": "Barva",
     "settings.paper": "Velikost papirja",
     "settings.paper.default": "Po tiskalniku",
+    "settings.paper.auto": "Po PDF-ju",
     "settings.legacyNote": "možnosti tiskanja zahtevajo vgrajeni pogon",
     "settings.close": "Zapri",
     "settings.tip": "Nastavitve",

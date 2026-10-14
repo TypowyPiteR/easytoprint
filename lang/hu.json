@@ -39,6 +39,7 @@
     "settings.color": "Szín",
     "settings.paper": "Papírméret",
     "settings.paper.default": "A nyomtató szerint",
+    "settings.paper.auto": "A PDF szerint",
     "settings.legacyNote": "a nyomtatási beállítások beépített motort igényelnek",
     "settings.close": "Bezárás",
     "settings.tip": "Beállítások",

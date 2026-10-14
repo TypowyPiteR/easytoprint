@@ -39,6 +39,7 @@
     "settings.color": "Farve",
     "settings.paper": "Papirformat",
     "settings.paper.default": "Efter printer",
+    "settings.paper.auto": "Som i PDF'en",
     "settings.legacyNote": "udskrivningsindstillinger kræver den indbyggede motor",
     "settings.close": "Luk",
     "settings.tip": "Indstillinger",

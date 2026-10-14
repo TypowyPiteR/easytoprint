@@ -39,6 +39,7 @@
     "settings.color": "Farbe",
     "settings.paper": "Papierformat",
     "settings.paper.default": "Druckerstandard",
+    "settings.paper.auto": "Wie im PDF",
     "settings.legacyNote": "Druckoptionen erfordern die eingebaute Engine",
     "settings.close": "Schließen",
     "settings.tip": "Einstellungen",

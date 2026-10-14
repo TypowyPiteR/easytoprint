@@ -118,48 +118,85 @@ impl ColorMode {
     }
 }
 
-/// One selectable paper size. Standard formats use the Windows DMPAPER
-/// constant; the rest set explicit dimensions (tenths of a millimetre).
+/// One selectable paper size. `tenths_mm` carries the real dimensions
+/// (width × length in 0.1 mm) for every format — used both for custom
+/// DEVMODE sizes and for matching PDF page sizes. Standard formats
+/// additionally carry the Windows DMPAPER constant.
+#[derive(Debug)]
 pub struct PaperDef {
     /// stable code, also the display label (A4, DL, Letter…)
     pub code: &'static str,
     /// DMPAPER_* constant when the format is standard
     pub dm: Option<u32>,
-    /// (width, length) in 0.1 mm for custom sizes
-    pub tenths_mm: Option<(i32, i32)>,
+    /// (width, length) in 0.1 mm
+    pub tenths_mm: (i32, i32),
 }
 
 macro_rules! paper {
-    ($code:literal, dm $dm:expr) => {
-        PaperDef { code: $code, dm: Some($dm), tenths_mm: None }
+    ($code:literal, dm $dm:expr, $w:literal x $l:literal) => {
+        PaperDef { code: $code, dm: Some($dm), tenths_mm: ($w, $l) }
     };
-    ($code:literal, mm $w:literal x $l:literal) => {
-        PaperDef { code: $code, dm: None, tenths_mm: Some(($w, $l)) }
+    ($code:literal, $w:literal x $l:literal) => {
+        PaperDef { code: $code, dm: None, tenths_mm: ($w, $l) }
     };
 }
 
 pub const PAPERS: &[PaperDef] = &[
-    paper!("A0", mm 8410 x 11890),
-    paper!("A1", mm 5940 x 8410),
-    paper!("A2", dm 66),
-    paper!("A3", dm 8),
-    paper!("A4", dm 9),
-    paper!("A5", dm 11),
-    paper!("A6", dm 70),
-    paper!("A7", mm 740 x 1050),
-    paper!("B0", mm 10000 x 14140),
-    paper!("B1", mm 7070 x 10000),
-    paper!("C4", mm 2290 x 3240),
-    paper!("C5", mm 1620 x 2290),
-    paper!("C6", mm 1140 x 1620),
-    paper!("DL", mm 1100 x 2200),
-    paper!("B2", mm 5000 x 7070),
-    paper!("B3", mm 3530 x 5000),
-    paper!("B4", dm 42),
-    paper!("B5", dm 13),
-    paper!("B6", mm 1250 x 1760),
-    paper!("Letter", dm 1),
+    paper!("A0", 8410 x 11890),
+    paper!("A1", 5940 x 8410),
+    paper!("A2", dm 66, 4200 x 5940),
+    paper!("A3", dm 8, 2970 x 4200),
+    paper!("A4", dm 9, 2100 x 2970),
+    paper!("A5", dm 11, 1480 x 2100),
+    paper!("A6", dm 70, 1050 x 1480),
+    paper!("A7", 740 x 1050),
+    paper!("B0", 10000 x 14140),
+    paper!("B1", 7070 x 10000),
+    paper!("C4", 2290 x 3240),
+    paper!("C5", 1620 x 2290),
+    paper!("C6", 1140 x 1620),
+    paper!("DL", 1100 x 2200),
+    paper!("B2", 5000 x 7070),
+    paper!("B3", 3530 x 5000),
+    paper!("B4", dm 42, 2500 x 3530),
+    paper!("B5", dm 13, 1760 x 2500),
+    paper!("B6", 1250 x 1760),
+    paper!("Letter", dm 1, 2159 x 2794),
 ];
+
+/// Special paper setting: each page gets paper matching its own PDF size.
+pub const PAPER_AUTO: &str = "auto";
+
+/// Paper chosen for a single PDF page.
+#[derive(Debug)]
+pub enum PagePaper {
+    Standard(&'static PaperDef),
+    /// non-standard page: exact dimensions in 0.1 mm (portrait order)
+    Custom { w: i32, l: i32 },
+}
+
+/// Matches a PDF page (in points) to the closest standard paper,
+/// tolerating ~2.5 mm and swapped (landscape) dimensions.
+/// Falls back to the page's own dimensions as a custom size.
+pub fn page_paper(w_pts: f64, h_pts: f64) -> PagePaper {
+    const PT_TO_TENTHS_MM: f64 = 254.0 / 72.0;
+    const TOL: i32 = 25;
+    let w = (w_pts * PT_TO_TENTHS_MM).round() as i32;
+    let h = (h_pts * PT_TO_TENTHS_MM).round() as i32;
+    for p in PAPERS {
+        let (pw, pl) = p.tenths_mm;
+        let portrait = (w - pw).abs() <= TOL && (h - pl).abs() <= TOL;
+        let landscape = (w - pl).abs() <= TOL && (h - pw).abs() <= TOL;
+        if portrait || landscape {
+            return PagePaper::Standard(p);
+        }
+    }
+    if w <= h {
+        PagePaper::Custom { w, l: h }
+    } else {
+        PagePaper::Custom { w: h, l: w }
+    }
+}
 
 /// Overrides applied to every print job. "Printer" variants / empty paper
 /// mean "leave whatever Windows has configured as the printer default".
@@ -206,18 +243,20 @@ fn apply_settings(dm: &mut windows_sys::Win32::Graphics::Gdi::DEVMODEW, s: &Prin
     }
     if !s.paper.is_empty() {
         if let Some(p) = PAPERS.iter().find(|p| p.code == s.paper) {
-            match (p.dm, p.tenths_mm) {
-                (Some(constant), _) => {
+            match p.dm {
+                Some(constant) => {
                     dm.Anonymous1.Anonymous1.dmPaperSize = constant as i16;
                     dm.dmFields |= DM_PAPERSIZE;
+                    dm.dmFields &= !(DM_PAPERLENGTH | DM_PAPERWIDTH);
                 }
-                (None, Some((w, l))) => {
+                None => {
+                    let (w, l) = p.tenths_mm;
                     dm.Anonymous1.Anonymous1.dmPaperSize = DMPAPER_USER as i16;
                     dm.Anonymous1.Anonymous1.dmPaperLength = l as i16;
                     dm.Anonymous1.Anonymous1.dmPaperWidth = w as i16;
                     dm.dmFields |= DM_PAPERLENGTH | DM_PAPERWIDTH;
+                    dm.dmFields &= !DM_PAPERSIZE;
                 }
-                _ => {}
             }
         }
     }
@@ -330,7 +369,8 @@ pub fn print_pdf(
                     return Err("failed to load pdfium.dll".into());
                 };
                 let dm = devmode_buffer(&printer, settings);
-                gdi_print(pdfium, pdf, &printer, dm.as_deref())
+                let auto = settings.paper == PAPER_AUTO;
+                gdi_print(pdfium, pdf, &printer, dm.as_deref(), auto)
             }
             #[cfg(not(windows))]
             Err("built-in printing is supported on Windows only".into())
@@ -384,6 +424,7 @@ pub(crate) fn gdi_print(
     pdf: &Path,
     printer: &str,
     devmode: Option<&[u8]>,
+    auto_paper: bool,
 ) -> Result<(), String> {
     use windows_sys::Win32::Graphics::Gdi as g;
     use windows_sys::Win32::Storage::Xps as xps;
@@ -402,7 +443,7 @@ pub(crate) fn gdi_print(
         let dm_ptr = devmode
             .map(|b| b.as_ptr() as *const g::DEVMODEW)
             .unwrap_or(std::ptr::null());
-        let hdc = g::CreateDCW(std::ptr::null(), dev.as_ptr(), std::ptr::null(), dm_ptr);
+        let mut hdc = g::CreateDCW(std::ptr::null(), dev.as_ptr(), std::ptr::null(), dm_ptr);
         if hdc.is_null() {
             return Err(format!("failed to open printer “{printer}”"));
         }
@@ -420,6 +461,16 @@ pub(crate) fn gdi_print(
 
         let mut result = Ok(());
         for page in doc.pages().iter() {
+            // "match PDF page size": switch the paper before every page
+            if auto_paper {
+                if let Some(base) = devmode {
+                    if let Some(new_hdc) =
+                        page_devmode_and_reset(hdc, base, page.width().value as f64, page.height().value as f64)
+                    {
+                        hdc = new_hdc;
+                    }
+                }
+            }
             if xps::StartPage(hdc) <= 0 {
                 result = Err("failed to start a page".into());
                 break;
@@ -438,6 +489,49 @@ pub(crate) fn gdi_print(
             result = Err("failed to finish the print job".into());
         }
         result
+    }
+}
+
+/// Builds a per-page DEVMODE (paper matching the PDF page, everything else
+/// copied from the job's base) and applies it with ResetDC. Returns the
+/// (possibly new) device context, or None if the switch failed.
+#[cfg(windows)]
+unsafe fn page_devmode_and_reset(
+    hdc: windows_sys::Win32::Graphics::Gdi::HDC,
+    base: &[u8],
+    w_pts: f64,
+    h_pts: f64,
+) -> Option<windows_sys::Win32::Graphics::Gdi::HDC> {
+    use windows_sys::Win32::Graphics::Gdi as g;
+    use windows_sys::Win32::Graphics::Gdi::{
+        DMPAPER_USER, DM_PAPERSIZE, DM_PAPERLENGTH, DM_PAPERWIDTH,
+    };
+
+    let mut buf = base.to_vec();
+    let dm = buf.as_mut_ptr() as *mut g::DEVMODEW;
+    match page_paper(w_pts, h_pts) {
+        PagePaper::Standard(def) if def.dm.is_some() => {
+            (*dm).Anonymous1.Anonymous1.dmPaperSize = def.dm.unwrap() as i16;
+            (*dm).dmFields |= DM_PAPERSIZE;
+            (*dm).dmFields &= !(DM_PAPERLENGTH | DM_PAPERWIDTH);
+        }
+        other => {
+            let (w, l) = match other {
+                PagePaper::Standard(def) => def.tenths_mm,
+                PagePaper::Custom { w, l } => (w, l),
+            };
+            (*dm).Anonymous1.Anonymous1.dmPaperSize = DMPAPER_USER as i16;
+            (*dm).Anonymous1.Anonymous1.dmPaperLength = l as i16;
+            (*dm).Anonymous1.Anonymous1.dmPaperWidth = w as i16;
+            (*dm).dmFields |= DM_PAPERLENGTH | DM_PAPERWIDTH;
+            (*dm).dmFields &= !DM_PAPERSIZE;
+        }
+    }
+    let new_hdc = g::ResetDCW(hdc, dm);
+    if new_hdc.is_null() {
+        None
+    } else {
+        Some(new_hdc)
     }
 }
 
@@ -599,6 +693,41 @@ mod tests {
             top > bottom,
             "the printout appears flipped (dark pixels: top={top}, bottom={bottom})"
         );
+    }
+
+    #[test]
+    fn page_paper_matches_standard_sizes() {
+        use PagePaper::*;
+        // A4 portrait (595×842 pt)
+        match page_paper(595.0, 842.0) {
+            Standard(p) => assert_eq!(p.code, "A4"),
+            other => panic!("expected A4, got {other:?}"),
+        }
+        // A5 landscape page → still the A5 paper
+        match page_paper(595.0, 420.0) {
+            Standard(p) => assert_eq!(p.code, "A5"),
+            other => panic!("expected A5, got {other:?}"),
+        }
+        // C5 envelope (162×229 mm ≈ 459×649 pt)
+        match page_paper(458.7, 649.1) {
+            Standard(p) => assert_eq!(p.code, "C5"),
+            other => panic!("expected C5, got {other:?}"),
+        }
+        // DL envelope
+        match page_paper(623.6, 311.8) {
+            Standard(p) => assert_eq!(p.code, "DL"),
+            other => panic!("expected DL, got {other:?}"),
+        }
+        // US Letter
+        match page_paper(612.0, 792.0) {
+            Standard(p) => assert_eq!(p.code, "Letter"),
+            other => panic!("expected Letter, got {other:?}"),
+        }
+        // odd page → custom, portrait order
+        match page_paper(400.0, 700.0) {
+            Custom { w, l } => assert_eq!((w, l), (1411, 2469)),
+            other => panic!("expected custom, got {other:?}"),
+        }
     }
 
     #[test]

@@ -475,6 +475,7 @@ struct UiTexts {
     lbl_color: String,
     lbl_paper: String,
     paper_default: String,
+    paper_auto: String,
     legacy_note: String,
     close: String,
     gear_tip: String,
@@ -524,6 +525,7 @@ impl UiTexts {
             lbl_color: lang.tr("settings.color"),
             lbl_paper: lang.tr("settings.paper"),
             paper_default: lang.tr("settings.paper.default"),
+            paper_auto: lang.tr("settings.paper.auto"),
             legacy_note: lang.tr("settings.legacyNote"),
             close: lang.tr("settings.close"),
             gear_tip: lang.tr("settings.tip"),
@@ -1543,10 +1545,10 @@ impl eframe::App for App {
                                 .size(12.5)
                                 .color(theme::INK_SOFT),
                         );
-                        let selected = if self.pset.paper.is_empty() {
-                            t.paper_default.clone()
-                        } else {
-                            self.pset.paper.clone()
+                        let selected = match self.pset.paper.as_str() {
+                            "" => t.paper_default.clone(),
+                            "auto" => t.paper_auto.clone(),
+                            code => code.to_string(),
                         };
                         egui::ComboBox::from_id_salt("paper")
                             .selected_text(
@@ -1559,6 +1561,16 @@ impl eframe::App for App {
                                         &mut self.pset.paper,
                                         String::new(),
                                         t.paper_default.clone(),
+                                    )
+                                    .changed()
+                                {
+                                    self.save_cfg();
+                                }
+                                if ui
+                                    .selectable_value(
+                                        &mut self.pset.paper,
+                                        print::PAPER_AUTO.to_string(),
+                                        t.paper_auto.clone(),
                                     )
                                     .changed()
                                 {

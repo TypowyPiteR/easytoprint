@@ -39,6 +39,7 @@
     "settings.color": "Barva",
     "settings.paper": "Formát papíru",
     "settings.paper.default": "Podle tiskárny",
+    "settings.paper.auto": "Podle PDF",
     "settings.legacyNote": "možnosti tisku vyžadují vestavěný engine",
     "settings.close": "Zavřít",
     "settings.tip": "Nastavení",

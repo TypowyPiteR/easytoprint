@@ -39,6 +39,7 @@
     "settings.color": "Värv",
     "settings.paper": "Paberi suurus",
     "settings.paper.default": "Printeri järgi",
+    "settings.paper.auto": "PDF-i järgi",
     "settings.legacyNote": "prindivalikud nõuavad sisseehitatud mootorit",
     "settings.close": "Sulge",
     "settings.tip": "Sätted",

@@ -39,6 +39,7 @@
     "settings.color": "Boja",
     "settings.paper": "Format papira",
     "settings.paper.default": "Prema pisaču",
+    "settings.paper.auto": "Prema PDF-u",
     "settings.legacyNote": "opcije ispisa zahtijevaju ugrađeni pogon",
     "settings.close": "Zatvori",
     "settings.tip": "Postavke",

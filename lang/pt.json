@@ -39,6 +39,7 @@
     "settings.color": "Cor",
     "settings.paper": "Formato do papel",
     "settings.paper.default": "Conforme a impressora",
+    "settings.paper.auto": "Conforme o PDF",
     "settings.legacyNote": "as opções de impressão requerem o motor integrado",
     "settings.close": "Fechar",
     "settings.tip": "Definições",

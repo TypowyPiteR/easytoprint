@@ -39,6 +39,7 @@
     "settings.color": "Culoare",
     "settings.paper": "Format hârtie",
     "settings.paper.default": "Conform imprimantei",
+    "settings.paper.auto": "Conform PDF-ului",
     "settings.legacyNote": "opțiunile de tipărire necesită motorul integrat",
     "settings.close": "Închide",
     "settings.tip": "Setări",

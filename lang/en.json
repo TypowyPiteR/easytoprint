@@ -46,6 +46,7 @@
     "settings.color": "Color",
     "settings.paper": "Paper size",
     "settings.paper.default": "Printer default",
+    "settings.paper.auto": "Match PDF page size",
     "settings.legacyNote": "print options need the built-in engine",
     "settings.close": "Close",
     "settings.tip": "Settings",

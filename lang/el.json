@@ -39,6 +39,7 @@
     "settings.color": "Χρώμα",
     "settings.paper": "Μέγεθος χαρτιού",
     "settings.paper.default": "Σύμφωνα με τον εκτυπωτή",
+    "settings.paper.auto": "Σύμφωνα με το PDF",
     "settings.legacyNote": "οι επιλογές εκτύπωσης απαιτούν την ενσωματωμένη μηχανή",
     "settings.close": "Κλείσιμο",
     "settings.tip": "Ρυθμίσεις",

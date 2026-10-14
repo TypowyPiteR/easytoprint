@@ -46,6 +46,7 @@
     "settings.color": "Kolor",
     "settings.paper": "Rozmiar papieru",
     "settings.paper.default": "Drukarka decyduje",
+    "settings.paper.auto": "Jak w pliku PDF",
     "settings.legacyNote": "opcje druku wymagają wbudowanego silnika",
     "settings.close": "Zamknij",
     "settings.tip": "Ustawienia",

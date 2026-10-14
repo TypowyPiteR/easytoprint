@@ -39,6 +39,7 @@
     "settings.color": "Krāsa",
     "settings.paper": "Papīra izmērs",
     "settings.paper.default": "Pēc printera",
+    "settings.paper.auto": "Atbilstoši PDF",
     "settings.legacyNote": "drukāšanas opcijas prasa iebūvēto dzinēju",
     "settings.close": "Aizvērt",
     "settings.tip": "Iestatījumi",

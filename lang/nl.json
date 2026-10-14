@@ -39,6 +39,7 @@
     "settings.color": "Kleur",
     "settings.paper": "Papierformaat",
     "settings.paper.default": "Volgens printer",
+    "settings.paper.auto": "Zoals in de PDF",
     "settings.legacyNote": "afdrukopties vereisen de ingebouwde engine",
     "settings.close": "Sluiten",
     "settings.tip": "Instellingen",

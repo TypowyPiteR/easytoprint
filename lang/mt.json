@@ -39,6 +39,7 @@
     "settings.color": "Kulur",
     "settings.paper": "Daqs tal-karta",
     "settings.paper.default": "Skond il-printer",
+    "settings.paper.auto": "Skond il-PDF",
     "settings.legacyNote": "l-għażliet ta' l-istampar jeħtieġu l-mutur integrat",
     "settings.close": "Agħlaq",
     "settings.tip": "Setings",

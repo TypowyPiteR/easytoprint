@@ -39,6 +39,7 @@
     "settings.color": "Dath",
     "settings.paper": "Méid an pháipéir",
     "settings.paper.default": "De réir an phriontóra",
+    "settings.paper.auto": "De réir an PDF",
     "settings.legacyNote": "teastaíonn an t-inneall ionsuite le roghanna priontála",
     "settings.close": "Dún",
     "settings.tip": "Socruithe",

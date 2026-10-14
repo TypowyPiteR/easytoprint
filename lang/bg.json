@@ -39,6 +39,7 @@
     "settings.color": "Цвят",
     "settings.paper": "Формат хартия",
     "settings.paper.default": "Според принтера",
+    "settings.paper.auto": "Според PDF",
     "settings.legacyNote": "настройките за печат изискват вградения двигател",
     "settings.close": "Затваряне",
     "settings.tip": "Настройки",

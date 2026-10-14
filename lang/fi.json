@@ -39,6 +39,7 @@
     "settings.color": "Väri",
     "settings.paper": "Paperikoko",
     "settings.paper.default": "Tulostimen mukaan",
+    "settings.paper.auto": "PDF:n mukaan",
     "settings.legacyNote": "tulostusvalinnat vaativat sisäänrakennetun moottorin",
     "settings.close": "Sulje",
     "settings.tip": "Asetukset",

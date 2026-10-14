@@ -39,6 +39,7 @@
     "settings.color": "Spalva",
     "settings.paper": "Popieriaus formatas",
     "settings.paper.default": "Pagal spausdintuvą",
+    "settings.paper.auto": "Pagal PDF",
     "settings.legacyNote": "spausdinimo parinktys reikalauja įmontuoto modulio",
     "settings.close": "Uždaryti",
     "settings.tip": "Nustatymai",

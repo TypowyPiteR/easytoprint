@@ -39,6 +39,7 @@
     "settings.color": "Färg",
     "settings.paper": "Pappersformat",
     "settings.paper.default": "Enligt skrivaren",
+    "settings.paper.auto": "Enligt PDF:en",
     "settings.legacyNote": "utskriftsalternativen kräver den inbyggda motorn",
     "settings.close": "Stäng",
     "settings.tip": "Inställningar",
