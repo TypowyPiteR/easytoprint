@@ -132,6 +132,14 @@ impl Job {
 
 type Queue = Arc<Mutex<Vec<Job>>>;
 
+/// A removed queue row, playing its fade-out animation.
+#[derive(Clone, Debug)]
+struct Ghost {
+    name: String,
+    status: Status,
+    key: u64,
+}
+
 fn is_pdf(path: &std::path::Path) -> bool {
     path.extension()
         .map(|e| e.eq_ignore_ascii_case("pdf"))
@@ -464,6 +472,7 @@ fn faded(c: Color32, t: f32) -> Color32 {
 }
 
 /// Custom window title bar (native decorations are off).
+/// Drawn edge-to-edge by the caller (TopBottomPanel with zero margins).
 fn title_bar(ui: &mut egui::Ui, title: &str) {
     let h = 40.0;
     let (rect, resp) = ui.allocate_exact_size(
@@ -471,7 +480,6 @@ fn title_bar(ui: &mut egui::Ui, title: &str) {
         Sense::click_and_drag(),
     );
     let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same(0), theme::CARD);
     p.line_segment(
         [rect.left_bottom(), egui::pos2(rect.right(), rect.bottom())],
         Stroke::new(1.0_f32, theme::HAIRLINE),
@@ -533,7 +541,16 @@ fn title_bar(ui: &mut egui::Ui, title: &str) {
                     p.rect_filled(br, CornerRadius::same(0), Color32::from_rgb(232, 17, 35));
                 }
                 let col = if hov { Color32::WHITE } else { theme::INK_SOFT };
-                p.text(center, Align2::CENTER_CENTER, "×", FontId::proportional(15.0), col);
+                // same visual weight as the other buttons: two 1.4 px strokes
+                let s = 5.0;
+                p.line_segment(
+                    [egui::pos2(center.x - s, center.y - s), egui::pos2(center.x + s, center.y + s)],
+                    Stroke::new(1.4_f32, col),
+                );
+                p.line_segment(
+                    [egui::pos2(center.x - s, center.y + s), egui::pos2(center.x + s, center.y - s)],
+                    Stroke::new(1.4_f32, col),
+                );
                 if bresp.clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -671,12 +688,9 @@ impl UiTexts {
 
 /// Progress bar drawn by hand: 26 px tall, accent fill, text centered both
 /// ways — white over the fill, ink over the empty track.
-fn progress_bar(ui: &mut egui::Ui, frac: f32, text: &str) {
-    let h = 26.0;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), Sense::hover());
-    let p = ui.painter();
+fn paint_progress(p: &egui::Painter, rect: egui::Rect, frac: f32, text: &str) {
     let cr = CornerRadius::same(8);
-    p.rect_filled(rect, cr, Color32::from_rgb(226, 232, 240));
+    p.with_clip_rect(rect).rect_filled(rect, cr, Color32::from_rgb(226, 232, 240));
     let frac = frac.clamp(0.0, 1.0);
     let fill = if rect.width() * frac >= 16.0 {
         Some(egui::Rect::from_min_max(
@@ -687,7 +701,7 @@ fn progress_bar(ui: &mut egui::Ui, frac: f32, text: &str) {
         None
     };
     if let Some(f) = fill {
-        p.rect_filled(f, cr, theme::ACCENT);
+        p.with_clip_rect(rect).rect_filled(f, cr, theme::ACCENT);
     }
     let galley = p.layout_no_wrap(text.to_owned(), FontId::proportional(12.5), theme::INK);
     let pos = rect.center() - galley.size() / 2.0;
@@ -696,9 +710,9 @@ fn progress_bar(ui: &mut egui::Ui, frac: f32, text: &str) {
         egui::pos2(rect.left() + rect.width() * frac, rect.top()),
         rect.max,
     );
-    p.with_clip_rect(rest).galley(pos, galley.clone(), theme::INK);
+    p.with_clip_rect(rest.intersect(rect)).galley(pos, galley.clone(), theme::INK);
     if let Some(f) = fill {
-        p.with_clip_rect(f)
+        p.with_clip_rect(f.intersect(rect))
             .galley_with_override_text_color(pos, galley, Color32::WHITE);
     }
 }
@@ -725,6 +739,11 @@ struct App {
     lang_files: Vec<(String, String)>,
     /// rows that already played their appear-animation
     row_seen: std::collections::HashSet<PathBuf>,
+    /// removed rows fading out
+    ghosts: Vec<Ghost>,
+    ghost_seq: u64,
+    /// last known status of each row (to animate status changes)
+    last_status: std::collections::HashMap<PathBuf, Status>,
 }
 
 impl App {
@@ -794,6 +813,9 @@ impl App {
             lang,
             lang_files,
             row_seen: std::collections::HashSet::new(),
+            ghosts: Vec::new(),
+            ghost_seq: 0,
+            last_status: std::collections::HashMap::new(),
         }
     }
 
@@ -818,6 +840,18 @@ impl App {
     fn set_language(&mut self, file: &str) {
         self.lang = Lang::load(lang::lang_dir().as_deref(), file);
         self.save_cfg();
+    }
+
+    /// Starts the fade-out animation of a removed row.
+    fn push_ghost(&mut self, ctx: &egui::Context, name: String, status: Status) {
+        self.ghost_seq += 1;
+        let key = self.ghost_seq;
+        // seed the animation at full visibility, then let it fade to 0
+        ctx.animate_value_with_time(egui::Id::new(("ghost", key)), 1.0, 1e-9);
+        self.ghosts.push(Ghost { name, status, key });
+        if self.ghosts.len() > 12 {
+            self.ghosts.remove(0);
+        }
     }
 
     fn start_worker(&mut self) {
@@ -909,17 +943,40 @@ impl eframe::App for App {
 
         let t = UiTexts::build(&self.lang);
 
+        // rounded window corners (hidden when maximized)
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        let corner = if maximized { 0 } else { 12 };
+
+        // title bar flush to the top edges
+        egui::TopBottomPanel::top("app-titlebar")
+            .frame(
+                egui::Frame::default()
+                    .fill(theme::CARD)
+                    .inner_margin(egui::Margin::same(0))
+                    .corner_radius(CornerRadius {
+                        nw: corner,
+                        ne: corner,
+                        sw: 0,
+                        se: 0,
+                    }),
+            )
+            .show(ctx, |ui| {
+                title_bar(ui, "EasyToPrint — bulk PDF printing");
+            });
+
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
                     .fill(theme::PAPER)
-                    .inner_margin(egui::Margin::same(22)),
+                    .inner_margin(egui::Margin::same(22))
+                    .corner_radius(CornerRadius {
+                        nw: 0,
+                        ne: 0,
+                        sw: corner,
+                        se: corner,
+                    }),
             )
             .show(ctx, |ui| {
-                // ---- custom title bar ----
-                title_bar(ui, "EasyToPrint — bulk PDF printing");
-                ui.add_space(8.0);
-
                 // ---- Header: CMYK + title, counter and gear to the right ----
                 ui.horizontal(|ui| {
                     cmyk_mark(ui, 8.0);
@@ -962,12 +1019,13 @@ impl eframe::App for App {
                 };
                 let p = ui.painter();
                 let cr = CornerRadius::same(12);
-                let base = mix(theme::ACCENT, Color32::from_rgb(17, 141, 172), hov_t);
-                let zone_fill = if dragging {
-                    Color32::from_rgb(11, 100, 124)
-                } else {
-                    base
-                };
+                let drag_t = ui.ctx().animate_value_with_time(
+                    egui::Id::new("drop_drag"),
+                    if dragging { 1.0 } else { 0.0 },
+                    0.12,
+                );
+                let hovered_col = mix(theme::ACCENT, Color32::from_rgb(17, 141, 172), hov_t);
+                let zone_fill = mix(hovered_col, Color32::from_rgb(11, 100, 124), drag_t);
                 p.rect_filled(rect, cr, zone_fill);
                 if dragging {
                     p.rect_stroke(
@@ -1113,9 +1171,14 @@ impl eframe::App for App {
                     );
                 }
 
-                // ---- Progress ----
-                if total > 0 {
-                    ui.add_space(6.0);
+                // ---- Progress (collapses away when the queue is empty) ----
+                let prog_h = ui.ctx().animate_value_with_time(
+                    egui::Id::new("progress_h"),
+                    if total > 0 { 26.0 } else { 0.0 },
+                    0.28,
+                );
+                if prog_h > 0.5 {
+                    ui.add_space(6.0 * (prog_h / 26.0).min(1.0));
                     let fin = done + errors;
                     let frac = fin as f32 / total as f32;
                     let mut text = fill(&t.prog_sent_tpl, "done", &fin.to_string());
@@ -1129,15 +1192,34 @@ impl eframe::App for App {
                         frac,
                         0.45,
                     );
-                    progress_bar(ui, frac_anim, &text);
-                    if let Some((_, name, _)) = snapshot
-                        .iter()
-                        .find(|(_, _, s)| *s == Status::Printing)
-                    {
-                        ui.label(
-                            RichText::new(fill(&t.prog_now_tpl, "name", name))
-                                .size(12.0)
-                                .color(theme::AMBER_TX),
+                    let (prect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), prog_h),
+                        Sense::hover(),
+                    );
+                    paint_progress(ui.painter(), prect, frac_anim, &text);
+                    // "Printing: …" line, fading in/out
+                    let printing_now = snapshot.iter().any(|(_, _, s)| *s == Status::Printing);
+                    let now_h = ui.ctx().animate_value_with_time(
+                        egui::Id::new("now_h"),
+                        if printing_now { 17.0 } else { 0.0 },
+                        0.25,
+                    );
+                    if now_h > 0.5 {
+                        let (nrect, _) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), now_h),
+                            Sense::hover(),
+                        );
+                        let alpha = (now_h / 17.0).min(1.0);
+                        let line = match snapshot.iter().find(|(_, _, s)| *s == Status::Printing) {
+                            Some((_, name, _)) => fill(&t.prog_now_tpl, "name", name),
+                            None => String::new(),
+                        };
+                        ui.painter().text(
+                            nrect.left_top(),
+                            Align2::LEFT_CENTER,
+                            line,
+                            FontId::proportional(12.0),
+                            faded(theme::AMBER_TX, alpha),
                         );
                     }
                 }
@@ -1151,8 +1233,15 @@ impl eframe::App for App {
                     .inner_margin(egui::Margin::same(10))
                     .show(ui, |ui| {
                         if total == 0 {
+                            // empty state fades in (e.g. after "Clear")
+                            let empty_t = ui.ctx().animate_value_with_time(
+                                egui::Id::new("empty_state"),
+                                1.0,
+                                0.3,
+                            );
+                            let eh = 170.0 * empty_t.max(0.15);
                             let (rect, _) = ui.allocate_exact_size(
-                                egui::vec2(ui.available_width(), 170.0),
+                                egui::vec2(ui.available_width(), eh),
                                 Sense::hover(),
                             );
                             let c = rect.center();
@@ -1161,42 +1250,49 @@ impl eframe::App for App {
                                 Align2::CENTER_CENTER,
                                 &t.empty_title,
                                 FontId::proportional(14.0),
-                                theme::INK_SOFT,
+                                faded(theme::INK_SOFT, empty_t),
                             );
                             ui.painter().text(
                                 egui::pos2(c.x, c.y + 24.0),
                                 Align2::CENTER_CENTER,
                                 &t.empty_sub,
                                 FontId::proportional(12.0),
-                                theme::INK_SOFT,
+                                faded(theme::INK_SOFT, empty_t),
                             );
                         } else {
-                            // table header
+                            // table header — fades/slides in with the first file
+                            let head_t = ui.ctx().animate_value_with_time(
+                                egui::Id::new("table_head"),
+                                1.0,
+                                0.25,
+                            );
+                            let head_h = HEAD_H * head_t.max(0.25);
                             let (hr, _) = ui.allocate_exact_size(
-                                egui::vec2(ui.available_width(), HEAD_H),
+                                egui::vec2(ui.available_width(), head_h),
                                 Sense::hover(),
                             );
                             let p = ui.painter();
+                            let hc = faded(theme::INK_SOFT, head_t);
                             p.text(
-                                egui::pos2(hr.left() + 38.0, hr.center().y),
+                                egui::pos2(hr.left() + 38.0, hr.top() + HEAD_H / 2.0),
                                 Align2::RIGHT_CENTER,
                                 "#",
                                 FontId::proportional(11.0),
-                                theme::INK_SOFT,
+                                hc,
                             );
                             p.text(
-                                egui::pos2(hr.left() + 54.0, hr.center().y),
+                                egui::pos2(hr.left() + 54.0, hr.top() + HEAD_H / 2.0),
                                 Align2::LEFT_CENTER,
                                 &t.col_file,
                                 FontId::proportional(11.0),
-                                theme::INK_SOFT,
+                                hc,
                             );
                             p.text(
-                                egui::pos2(hr.right() - 58.0, hr.center().y),
+                                egui::pos2(hr.right() - 58.0, hr.top() + HEAD_H / 2.0),
                                 Align2::RIGHT_CENTER,
                                 &t.col_status,
                                 FontId::proportional(11.0),
-                                theme::INK_SOFT,
+                                hc,
                             );
                             p.line_segment(
                                 [
@@ -1205,7 +1301,7 @@ impl eframe::App for App {
                                 ],
                                 Stroke::new(
                                     1.0_f32,
-                                    Color32::from_rgb(216, 214, 208),
+                                    faded(Color32::from_rgb(216, 214, 208), head_t),
                                 ),
                             );
 
@@ -1311,6 +1407,29 @@ impl eframe::App for App {
                                         } else {
                                             1.0
                                         };
+                                        // one-shot flash when the status changes
+                                        let flash_id = egui::Id::new(("statchange", path));
+                                        let status_changed = match self
+                                            .last_status
+                                            .insert(path.clone(), status.clone())
+                                        {
+                                            Some(prev) => prev != *status,
+                                            None => false,
+                                        };
+                                        if status_changed {
+                                            ui.ctx().animate_value_with_time(flash_id, 1.0, 1e-9);
+                                        }
+                                        let flash = ui
+                                            .ctx()
+                                            .animate_value_with_time(flash_id, 0.0, 0.55);
+                                        if flash > 0.02 {
+                                            let (_, _, fbc) = status.badge();
+                                            ui.painter().rect_filled(
+                                                cell,
+                                                CornerRadius::same(6),
+                                                faded(fbc, flash * 0.6),
+                                            );
+                                        }
                                         // row number (+1 px optical: digits have no
                                         // descenders, the line box sits low)
                                         ui.painter().text(
@@ -1460,6 +1579,61 @@ impl eframe::App for App {
                                             Stroke::new(2.5_f32, theme::ACCENT),
                                         );
                                     }
+                                    // removed rows fading out below the list
+                                    for gh in self.ghosts.clone() {
+                                        let gt = ui
+                                            .ctx()
+                                            .animate_value_with_time(
+                                                egui::Id::new(("ghost", gh.key)),
+                                                0.0,
+                                                0.3,
+                                            )
+                                            .clamp(0.0, 1.0);
+                                        if gt <= 0.02 {
+                                            continue;
+                                        }
+                                        let gh_h = ROW_H * (0.55 + 0.45 * gt);
+                                        let (gcell, _) = ui.allocate_exact_size(
+                                            egui::vec2(ui.available_width(), gh_h),
+                                            Sense::hover(),
+                                        );
+                                        let p = ui.painter();
+                                        let cy = gcell.top() + ROW_H / 2.0;
+                                        let slide = (1.0 - gt) * 26.0;
+                                        let gal = p.layout_no_wrap(
+                                            gh.name.clone(),
+                                            FontId::monospace(12.5),
+                                            theme::INK,
+                                        );
+                                        if gal.size().x > gcell.width() - RIGHT_ZONE {
+                                            continue;
+                                        }
+                                        p.galley_with_override_text_color(
+                                            egui::pos2(gcell.left() + 54.0 + slide, cy - gal.size().y / 2.0 + 1.5),
+                                            gal,
+                                            faded(theme::INK, gt),
+                                        );
+                                        let (txt, tx, bc) = gh.status.badge();
+                                        let ttx = match &gh.status {
+                                            Status::Waiting => t.st_waiting.clone(),
+                                            Status::Printing => t.st_printing.clone(),
+                                            Status::Done => t.st_sent.clone(),
+                                            Status::Error(_) => t.st_error.clone(),
+                                        };
+                                        let bgal = p.layout_no_wrap(ttx, FontId::proportional(11.0), tx);
+                                        let bs = bgal.size() + egui::vec2(16.0, 7.0);
+                                        let brect = egui::Rect::from_min_size(
+                                            egui::pos2(gcell.right() - 46.0 - bs.x + slide, cy - bs.y / 2.0),
+                                            bs,
+                                        );
+                                        p.rect_filled(brect, CornerRadius::same((bs.y / 2.0) as u8), faded(bc, gt));
+                                        p.galley_with_override_text_color(
+                                            brect.center() - bgal.size() / 2.0,
+                                            bgal,
+                                            faded(tx, gt),
+                                        );
+                                        let _ = txt;
+                                    }
                                 });
                             if let Some(i) = rm {
                                 remove_path = Some(snapshot[i].0.clone());
@@ -1487,7 +1661,7 @@ impl eframe::App for App {
             let mut open = self.settings_open;
             let mut close = false;
             // exact window height for the content: base + optional lines
-            let mut h = 452.0;
+            let mut h = 468.0;
             if self.printing() {
                 h += 17.0;
             }
@@ -1498,7 +1672,7 @@ impl eframe::App for App {
                 h += 17.0;
             }
             let win_frame = egui::Frame::window(&ctx.style())
-                .inner_margin(egui::Margin::same(14))
+                .inner_margin(egui::Margin::same(0))
                 .corner_radius(CornerRadius::same(10))
                 .stroke(Stroke::new(1.0_f32, theme::HAIRLINE))
                 .fill(theme::CARD);
@@ -1507,11 +1681,68 @@ impl eframe::App for App {
                 .default_pos(pos)
                 .fixed_size([390.0, h])
                 .frame(win_frame)
+                .title_bar(false)
                 .resizable(false)
                 .collapsible(false)
                 .open(&mut open)
                 .show(ctx, |ui| {
-                    ui.set_width(336.0);
+                    // custom header, identical in style to the app title bar
+                    let (hrect, hresp) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 40.0),
+                        Sense::click_and_drag(),
+                    );
+                    let layer = ui.layer_id();
+                    let delta = hresp.drag_delta();
+                    if delta != egui::Vec2::ZERO {
+                        ui.ctx().transform_layer_shapes(
+                            layer,
+                            egui::emath::TSTransform::from_translation(delta),
+                        );
+                    }
+                    let p = ui.painter();
+                    p.text(
+                        egui::pos2(hrect.left() + 14.0, hrect.center().y),
+                        Align2::LEFT_CENTER,
+                        &t.set_title,
+                        FontId::proportional(12.5),
+                        theme::INK,
+                    );
+                    p.line_segment(
+                        [
+                            hrect.left_bottom(),
+                            egui::pos2(hrect.right(), hrect.bottom()),
+                        ],
+                        Stroke::new(1.0_f32, theme::HAIRLINE),
+                    );
+                    // close button (same visuals as the window close button)
+                    let cbr = egui::Rect::from_min_max(
+                        egui::pos2(hrect.right() - 42.0, hrect.top()),
+                        hrect.right_bottom(),
+                    );
+                    let cresp =
+                        ui.interact(cbr, egui::Id::new("settings-close"), Sense::click());
+                    let chov = cresp.hovered();
+                    if chov {
+                        p.rect_filled(cbr, CornerRadius::same(0), Color32::from_rgb(232, 17, 35));
+                    }
+                    let ccol = if chov { Color32::WHITE } else { theme::INK_SOFT };
+                    let cc = cbr.center();
+                    p.line_segment(
+                        [egui::pos2(cc.x - 5.0, cc.y - 5.0), egui::pos2(cc.x + 5.0, cc.y + 5.0)],
+                        Stroke::new(1.4_f32, ccol),
+                    );
+                    p.line_segment(
+                        [egui::pos2(cc.x - 5.0, cc.y + 5.0), egui::pos2(cc.x + 5.0, cc.y - 5.0)],
+                        Stroke::new(1.4_f32, ccol),
+                    );
+                    if cresp.clicked() {
+                        close = true;
+                    }
+
+                    egui::Frame::default()
+                        .inner_margin(egui::Margin::same(14))
+                        .show(ui, |ui| {
+                            ui.set_width(336.0);
                     // ---- General ----
                     settings_group(ui, &t.grp_general, |ui| {
                         ui.label(
@@ -1754,23 +1985,48 @@ impl eframe::App for App {
                             close = true;
                         }
                     });
+                        });
                 });
             self.settings_open = open && !close;
         }
 
         // 5. Actions after drawing (no lock held during UI)
         if action_clear {
-            self.queue
-                .lock()
-                .unwrap()
-                .retain(|j| j.status == Status::Printing);
+            let removed: Vec<(String, Status)> = {
+                let mut g = self.queue.lock().unwrap();
+                let r: Vec<_> = g
+                    .iter()
+                    .filter(|j| j.status != Status::Printing)
+                    .map(|j| (j.name.clone(), j.status.clone()))
+                    .collect();
+                g.retain(|j| j.status == Status::Printing);
+                r
+            };
+            for (name, status) in removed {
+                self.push_ghost(ctx, name, status);
+            }
         }
         if let Some(p) = remove_path {
-            self.queue
-                .lock()
-                .unwrap()
-                .retain(|j| j.path != p || j.status == Status::Printing);
+            let removed = {
+                let mut g = self.queue.lock().unwrap();
+                let job = g
+                    .iter()
+                    .find(|j| j.path == p && j.status != Status::Printing)
+                    .map(|j| (j.name.clone(), j.status.clone()));
+                g.retain(|j| j.path != p || j.status == Status::Printing);
+                job
+            };
+            if let Some((name, status)) = removed {
+                self.push_ghost(ctx, name, status);
+            }
         }
+        if total == 0 {
+            self.last_status.clear();
+        }
+        // drop finished fade-out ghosts
+        self.ghosts.retain(|gh| {
+            ctx.animate_value_with_time(egui::Id::new(("ghost", gh.key)), 0.0, 0.3) > 0.02
+        });
         if action_start || ((files_added || files_picked) && self.autostart) {
             self.start_worker();
         }
@@ -1782,6 +2038,7 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("EasyToPrint — bulk PDF printing")
         .with_decorations(false)
+        .with_transparent(true)
         .with_inner_size([620.0, 860.0])
         .with_min_inner_size([480.0, 560.0]);
     if let Some(icon) = icon {
