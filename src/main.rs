@@ -440,6 +440,8 @@ struct App {
     default_printer: Option<String>,
     autostart: bool,
     settings_open: bool,
+    /// ongoing row drag: (source index, insertion index)
+    drag: Option<(usize, usize)>,
     engine: Option<print::EngineKind>,
 }
 
@@ -489,6 +491,7 @@ impl App {
             default_printer,
             autostart: false,
             settings_open: std::env::var("ETP_DEMO").as_deref() == Ok("2"),
+            drag: None,
             engine: print::EngineKind::detect(),
         }
     }
@@ -887,6 +890,8 @@ impl eframe::App for App {
                             );
 
                             let mut rm: Option<usize> = None;
+                            let mut dragging_now: Option<(usize, usize)> = None;
+                            let mut list_top: Option<f32> = None;
                             ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show_rows(ui, ROW_H, total, |ui, range| {
@@ -896,9 +901,26 @@ impl eframe::App for App {
                                             ui.cursor().min,
                                             egui::vec2(ui.available_width(), ROW_H),
                                         );
-                                        ui.allocate_rect(row_rect, Sense::hover());
+                                        let resp = ui
+                                            .allocate_rect(row_rect, Sense::click_and_drag());
                                         let alloc = row_rect;
+                                        if list_top.is_none() {
+                                            list_top =
+                                                Some(alloc.top() - i as f32 * ROW_H);
+                                        }
                                         let hovered = ui.rect_contains_pointer(alloc);
+                                        let is_dragged = resp.dragged();
+                                        if is_dragged {
+                                            if let Some(pos) = resp.interact_pointer_pos() {
+                                                if let Some(top) = list_top {
+                                                    let dst = (((pos.y - top) / ROW_H).round()
+                                                        as i64)
+                                                        .clamp(0, total as i64)
+                                                        as usize;
+                                                    dragging_now = Some((i, dst));
+                                                }
+                                            }
+                                        }
                                         // row background (hover across the whole row),
                                         // inset 2 px top and bottom so it never touches
                                         // the separator lines
@@ -906,6 +928,7 @@ impl eframe::App for App {
                                             Status::Printing => {
                                                 Some(Color32::from_rgb(255, 246, 221))
                                             }
+                                            _ if is_dragged => Some(theme::ACCENT_SOFT),
                                             _ if hovered => {
                                                 Some(Color32::from_rgb(244, 243, 239))
                                             }
@@ -927,10 +950,31 @@ impl eframe::App for App {
                                                 bg,
                                             );
                                         }
+                                        // drop indicator: accent line at the target slot
+                                        if let Some((_, dst)) = dragging_now {
+                                            let on_top = dst == i;
+                                            let on_bottom =
+                                                dst == i + 1 && i + 1 == total;
+                                            if on_top || on_bottom {
+                                                let y = if on_top {
+                                                    alloc.top()
+                                                } else {
+                                                    alloc.bottom()
+                                                };
+                                                ui.painter().line_segment(
+                                                    [
+                                                        egui::pos2(alloc.left() + 8.0, y),
+                                                        egui::pos2(alloc.right() - 8.0, y),
+                                                    ],
+                                                    Stroke::new(2.5_f32, theme::ACCENT),
+                                                );
+                                            }
+                                        }
                                         let cy = alloc.center().y;
-                                        // row number
+                                        // row number (+1 px optical: digits have no
+                                        // descenders, the line box sits low)
                                         ui.painter().text(
-                                            egui::pos2(alloc.left() + 38.0, cy),
+                                            egui::pos2(alloc.left() + 38.0, cy + 1.0),
                                             Align2::RIGHT_CENTER,
                                             format!("{}", i + 1),
                                             FontId::monospace(11.5),
@@ -938,7 +982,10 @@ impl eframe::App for App {
                                         );
                                         // file name — painted directly for pixel-perfect
                                         // vertical centering; truncated with an ellipsis,
-                                        // full path shown in a single tooltip
+                                        // full path shown in a single tooltip.
+                                        // +1.5 px optical: centers the glyphs, not the
+                                        // line box (bottom leading space would push the
+                                        // text visually up)
                                         let name_rect = egui::Rect::from_min_max(
                                             egui::pos2(alloc.left() + 54.0, alloc.top() + 3.0),
                                             egui::pos2(alloc.right() - RIGHT_ZONE, alloc.bottom() - 3.0),
@@ -961,7 +1008,10 @@ impl eframe::App for App {
                                             }
                                         }
                                         ui.painter().galley(
-                                            egui::pos2(name_rect.left(), cy - gal.size().y / 2.0),
+                                            egui::pos2(
+                                                name_rect.left(),
+                                                cy - gal.size().y / 2.0 + 1.5,
+                                            ),
                                             gal,
                                             theme::INK,
                                         );
@@ -1048,6 +1098,17 @@ impl eframe::App for App {
                                 });
                             if let Some(i) = rm {
                                 remove_path = Some(snapshot[i].0.clone());
+                            }
+                            // finish a row drag: move the job to the drop slot
+                            if let Some((s, d)) = dragging_now {
+                                self.drag = Some((s, d));
+                            } else if let Some((s, d)) = self.drag.take() {
+                                let mut g = self.queue.lock().unwrap();
+                                if s < g.len() {
+                                    let job = g.remove(s);
+                                    let d = if d > s { d - 1 } else { d }.min(g.len());
+                                    g.insert(d, job);
+                                }
                             }
                         }
                     });
