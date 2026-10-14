@@ -20,6 +20,8 @@ if errorlevel 1 exit /b 1
 
 mkdir dist 2>nul
 mkdir dist\lib 2>nul
+mkdir dist\lang 2>nul
 copy /y target\release\easytoprint.exe dist\ >nul
 copy /y lib\pdfium.dll dist\lib\ >nul
-echo Done: dist\easytoprint.exe + dist\lib\pdfium.dll
+copy /y lang\*.json dist\lang\ >nul
+echo Done: dist\easytoprint.exe + dist\lib\pdfium.dll + dist\lang\

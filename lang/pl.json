@@ -1,0 +1,62 @@
+{
+  "name": "Polski",
+  "strings": {
+    "files.one": "1 plik",
+    "files.many": "{n} plików",
+
+    "drop.main": "Przeciągnij i upuść pliki PDF",
+    "drop.sub": "albo kliknij tutaj, aby wybrać pliki",
+    "drop.active": "Upuść, aby dodać do kolejki",
+    "drop.add": "Dodaj: {names}",
+
+    "btn.print": "Drukuj",
+    "btn.printN": "Drukuj ({n})",
+    "btn.printing": "Drukowanie…",
+    "btn.stop": "Zatrzymaj",
+    "btn.clear": "Wyczyść",
+
+    "warn.engine": "Brak silnika drukowania — umieść lib/pdfium.dll obok programu.",
+
+    "progress.sent": "Wysłano {done} z {total}",
+    "progress.errors": " · błędy: {n}",
+    "progress.now": "Trwa drukowanie: {name}",
+
+    "queue.empty.title": "Kolejka jest pusta",
+    "queue.empty.sub": "upuść powyżej pliki PDF, aby rozpocząć",
+    "queue.col.file": "Plik",
+    "queue.col.status": "Status",
+
+    "status.waiting": "Oczekuje",
+    "status.printing": "Drukowanie…",
+    "status.sent": "Wysłano",
+    "status.error": "Błąd",
+    "status.sent.tip": "Wysłano do drukarki",
+    "status.error.tip": "Błąd: {msg}",
+
+    "settings.title": "Ustawienia",
+    "settings.group.general": "OGÓLNE",
+    "settings.group.printing": "DRUKOWANIE",
+    "settings.language": "Język",
+    "settings.printer": "Drukarka",
+    "settings.printer.default": "Domyślna",
+    "settings.printer.defaultNamed": "Domyślna ({name})",
+    "settings.nextJob": "zadziała od następnego wydruku",
+    "settings.autostart": "Drukuj od razu po dodaniu plików",
+    "settings.duplex": "Dwustronnie",
+    "settings.color": "Kolor",
+    "settings.paper": "Rozmiar papieru",
+    "settings.paper.default": "Drukarka decyduje",
+    "settings.legacyNote": "opcje druku wymagają wbudowanego silnika",
+    "settings.close": "Zamknij",
+    "settings.tip": "Ustawienia",
+
+    "duplex.printer": "Drukarka decyduje",
+    "duplex.simplex": "Jednostronnie",
+    "duplex.long": "Dwustronnie (długa krawędź)",
+    "duplex.short": "Dwustronnie (krótka krawędź)",
+
+    "color.printer": "Drukarka decyduje",
+    "color.color": "Kolorowo",
+    "color.grayscale": "Czarno-biało"
+  }
+}

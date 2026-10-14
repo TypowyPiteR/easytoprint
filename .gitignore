@@ -4,6 +4,8 @@ pdfium.dll
 lib/pdfium.dll
 dist/*.exe
 dist/lib
+dist/lang
+dist/easytoprint.json
 ui_*.png
 *.zip
 *.tgz

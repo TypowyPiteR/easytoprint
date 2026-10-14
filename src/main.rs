@@ -15,7 +15,12 @@ use eframe::egui::{
     Stroke, StrokeKind, TextStyle,
 };
 
+mod config;
+mod lang;
 mod print;
+
+use config::Config;
+use lang::Lang;
 
 /// Pause between jobs, so the printer spooler can keep up.
 const PAUSE_BETWEEN_JOBS: Duration = Duration::from_millis(2000);
@@ -85,20 +90,20 @@ enum Status {
 }
 
 impl Status {
-    /// (badge text, text color, badge background)
-    fn badge(&self) -> (String, Color32, Color32) {
+    /// (translation key, text color, badge background)
+    fn badge(&self) -> (&'static str, Color32, Color32) {
         match self {
-            Status::Waiting => ("Waiting".into(), theme::GRAY_TX, theme::GRAY_BG),
-            Status::Printing => ("Printing…".into(), theme::AMBER_TX, theme::AMBER_BG),
-            Status::Done => ("Sent".into(), theme::GREEN_TX, theme::GREEN_BG),
-            Status::Error(_) => ("Error".into(), theme::MAGENTA_TX, theme::MAGENTA_BG),
+            Status::Waiting => ("status.waiting", theme::GRAY_TX, theme::GRAY_BG),
+            Status::Printing => ("status.printing", theme::AMBER_TX, theme::AMBER_BG),
+            Status::Done => ("status.sent", theme::GREEN_TX, theme::GREEN_BG),
+            Status::Error(_) => ("status.error", theme::MAGENTA_TX, theme::MAGENTA_BG),
         }
     }
 
-    fn tooltip(&self) -> Option<String> {
+    fn tooltip_key(&self) -> Option<&'static str> {
         match self {
-            Status::Done => Some("Sent to the printer".into()),
-            Status::Error(e) => Some(format!("Error: {e}")),
+            Status::Done => Some("status.sent.tip"),
+            Status::Error(_) => Some("status.error.tip"),
             _ => None,
         }
     }
@@ -402,7 +407,7 @@ fn settings_group(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui
 }
 
 /// Round gear button (drawn by hand — no font dependency).
-fn gear_button(ui: &mut egui::Ui) -> egui::Response {
+fn gear_button(ui: &mut egui::Ui, tooltip: &str) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(34.0, 34.0), Sense::click());
     let c = rect.center();
     let p = ui.painter();
@@ -432,7 +437,128 @@ fn gear_button(ui: &mut egui::Ui) -> egui::Response {
     ));
     p.circle_stroke(c, 3.2, Stroke::new(1.4_f32, color));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text("Settings")
+        .on_hover_text(tooltip)
+}
+
+/// Replaces `{name}` placeholders in a translated template.
+fn fill(template: &str, name: &str, value: &str) -> String {
+    template.replace(&format!("{{{name}}}"), value)
+}
+
+/// All visible strings for one frame, translated up front.
+struct UiTexts {
+    files_one: String,
+    drop_main: String,
+    drop_sub: String,
+    drop_active: String,
+    btn_print: String,
+    btn_printing: String,
+    btn_stop: String,
+    btn_clear: String,
+    warn_engine: String,
+    empty_title: String,
+    empty_sub: String,
+    col_file: String,
+    col_status: String,
+    st_waiting: String,
+    st_printing: String,
+    st_sent: String,
+    st_error: String,
+    st_sent_tip: String,
+    set_title: String,
+    grp_general: String,
+    grp_printing: String,
+    lbl_language: String,
+    lbl_printer: String,
+    def_printer: String,
+    lbl_duplex: String,
+    lbl_color: String,
+    lbl_paper: String,
+    paper_default: String,
+    legacy_note: String,
+    close: String,
+    gear_tip: String,
+    next_job_hint: String,
+    autostart: String,
+    // templates with placeholders
+    files_many_tpl: String,
+    print_n_tpl: String,
+    drop_add_tpl: String,
+    prog_sent_tpl: String,
+    prog_errors_tpl: String,
+    prog_now_tpl: String,
+    err_tip_tpl: String,
+    def_printer_named_tpl: String,
+    duplex_labels: [String; 4],
+    color_labels: [String; 3],
+}
+
+impl UiTexts {
+    fn build(lang: &Lang) -> UiTexts {
+        UiTexts {
+            files_one: lang.tr("files.one"),
+            drop_main: lang.tr("drop.main"),
+            drop_sub: lang.tr("drop.sub"),
+            drop_active: lang.tr("drop.active"),
+            btn_print: lang.tr("btn.print"),
+            btn_printing: lang.tr("btn.printing"),
+            btn_stop: lang.tr("btn.stop"),
+            btn_clear: lang.tr("btn.clear"),
+            warn_engine: lang.tr("warn.engine"),
+            empty_title: lang.tr("queue.empty.title"),
+            empty_sub: lang.tr("queue.empty.sub"),
+            col_file: lang.tr("queue.col.file"),
+            col_status: lang.tr("queue.col.status"),
+            st_waiting: lang.tr("status.waiting"),
+            st_printing: lang.tr("status.printing"),
+            st_sent: lang.tr("status.sent"),
+            st_error: lang.tr("status.error"),
+            st_sent_tip: lang.tr("status.sent.tip"),
+            set_title: lang.tr("settings.title"),
+            grp_general: lang.tr("settings.group.general"),
+            grp_printing: lang.tr("settings.group.printing"),
+            lbl_language: lang.tr("settings.language"),
+            lbl_printer: lang.tr("settings.printer"),
+            def_printer: lang.tr("settings.printer.default"),
+            lbl_duplex: lang.tr("settings.duplex"),
+            lbl_color: lang.tr("settings.color"),
+            lbl_paper: lang.tr("settings.paper"),
+            paper_default: lang.tr("settings.paper.default"),
+            legacy_note: lang.tr("settings.legacyNote"),
+            close: lang.tr("settings.close"),
+            gear_tip: lang.tr("settings.tip"),
+            next_job_hint: lang.tr("settings.nextJob"),
+            autostart: lang.tr("settings.autostart"),
+            files_many_tpl: lang.tr("files.many"),
+            print_n_tpl: lang.tr("btn.printN"),
+            drop_add_tpl: lang.tr("drop.add"),
+            prog_sent_tpl: lang.tr("progress.sent"),
+            prog_errors_tpl: lang.tr("progress.errors"),
+            prog_now_tpl: lang.tr("progress.now"),
+            err_tip_tpl: lang.tr("status.error.tip"),
+            def_printer_named_tpl: lang.tr("settings.printer.defaultNamed"),
+            duplex_labels: [
+                lang.tr("duplex.printer"),
+                lang.tr("duplex.simplex"),
+                lang.tr("duplex.long"),
+                lang.tr("duplex.short"),
+            ],
+            color_labels: [
+                lang.tr("color.printer"),
+                lang.tr("color.color"),
+                lang.tr("color.grayscale"),
+            ],
+        }
+    }
+
+    fn status(&self, key: &str) -> &str {
+        match key {
+            "status.waiting" => &self.st_waiting,
+            "status.printing" => &self.st_printing,
+            "status.sent" => &self.st_sent,
+            _ => &self.st_error,
+        }
+    }
 }
 
 /// Progress bar drawn by hand: 26 px tall, accent fill, text centered both
@@ -486,14 +612,28 @@ struct App {
     drag: Option<(usize, usize)>,
     engine: Option<print::EngineKind>,
     pset: print::PrintSettings,
+    lang: Lang,
+    /// (file name, display name) of every language in lang/
+    lang_files: Vec<(String, String)>,
 }
 
 impl App {
     fn new(cc: &eframe::CreationContext) -> Self {
         install_fonts(&cc.egui_ctx);
         apply_theme(&cc.egui_ctx);
+        let cfg = Config::path()
+            .as_deref()
+            .map(Config::load)
+            .unwrap_or_default();
+        let ldir = lang::lang_dir();
+        let lang_files = lang::available(ldir.as_deref());
+        let lang = Lang::load(ldir.as_deref(), &cfg.language);
         let (default_printer, printers) = list_printers();
-        let printer = if printers.iter().any(|p| p == DEFAULT_PRINTER) {
+        let printer = if !cfg.printer.is_empty()
+            && printers.iter().any(|p| *p == cfg.printer)
+        {
+            cfg.printer.clone()
+        } else if printers.iter().any(|p| p == DEFAULT_PRINTER) {
             DEFAULT_PRINTER.to_string()
         } else {
             default_printer.clone().unwrap_or_default()
@@ -532,16 +672,41 @@ impl App {
             printer,
             printers,
             default_printer,
-            autostart: false,
+            autostart: cfg.autostart,
             settings_open: std::env::var("ETP_DEMO").as_deref() == Ok("2"),
             drag: None,
             engine: print::EngineKind::detect(),
-            pset: print::PrintSettings::default(),
+            pset: print::PrintSettings {
+                duplex: print::DuplexMode::from_code(&cfg.duplex),
+                color: print::ColorMode::from_code(&cfg.color),
+                paper: cfg.paper,
+            },
+            lang,
+            lang_files,
         }
     }
 
     fn printing(&self) -> bool {
         self.worker.is_some()
+    }
+
+    /// Persists the current settings next to the executable.
+    fn save_cfg(&self) {
+        let Some(path) = Config::path() else { return };
+        Config {
+            language: self.lang.file.clone(),
+            printer: self.printer.clone(),
+            autostart: self.autostart,
+            duplex: self.pset.duplex.code().into(),
+            color: self.pset.color.code().into(),
+            paper: self.pset.paper.clone(),
+        }
+        .save(&path);
+    }
+
+    fn set_language(&mut self, file: &str) {
+        self.lang = Lang::load(lang::lang_dir().as_deref(), file);
+        self.save_cfg();
     }
 
     fn start_worker(&mut self) {
@@ -553,7 +718,7 @@ impl App {
         let printer = if printer.is_empty() { None } else { Some(printer) };
         let queue = self.queue.clone();
         let stop = self.stop_flag.clone();
-        let settings = self.pset;
+        let settings = self.pset.clone();
         self.stop_flag.store(false, AtomicOrdering::Relaxed);
         self.worker = Some(thread::spawn(move || {
             run_queue(queue, engine, printer, settings, stop)
@@ -631,6 +796,8 @@ impl eframe::App for App {
                 .collect()
         });
 
+        let t = UiTexts::build(&self.lang);
+
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
@@ -644,14 +811,14 @@ impl eframe::App for App {
                     ui.add_space(4.0);
                     ui.label(RichText::new("EasyToPrint").size(21.0).color(theme::INK));
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                        if gear_button(ui).clicked() {
+                        if gear_button(ui, &t.gear_tip).clicked() {
                             open_settings = true;
                         }
                         if total > 0 {
                             let chip = if total == 1 {
-                                "1 file".to_string()
+                                t.files_one.clone()
                             } else {
-                                format!("{total} files")
+                                fill(&t.files_many_tpl, "n", &total.to_string())
                             };
                             badge(ui, &chip, theme::INK_SOFT, theme::GRAY_BG);
                         }
@@ -733,20 +900,16 @@ impl eframe::App for App {
                 p.text(
                     egui::pos2(c.x + shift, c.y + 12.0),
                     Align2::CENTER_CENTER,
-                    if dragging {
-                        "Drop to add to the queue"
-                    } else {
-                        "Drag & drop PDF files"
-                    },
+                    if dragging { &t.drop_active } else { &t.drop_main },
                     FontId::proportional(16.0),
                     theme::INK,
                 );
                 let sub = if dragging {
                     let names = hovered_files.join(", ");
                     let names: String = names.chars().take(60).collect();
-                    format!("Add: {names}")
+                    fill(&t.drop_add_tpl, "names", &names)
                 } else {
-                    "or click here to browse files".to_string()
+                    t.drop_sub.clone()
                 };
                 p.text(
                     egui::pos2(c.x + shift, c.y + 46.0),
@@ -775,7 +938,7 @@ impl eframe::App for App {
                         ui.add_enabled(
                             false,
                             egui::Button::new(
-                                RichText::new("Printing…")
+                                RichText::new(&t.btn_printing)
                                     .color(Color32::WHITE)
                                     .size(14.0),
                             )
@@ -786,7 +949,7 @@ impl eframe::App for App {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Stop")
+                                    RichText::new(&t.btn_stop)
                                         .color(theme::MAGENTA_TX)
                                         .size(13.5),
                                 )
@@ -800,9 +963,9 @@ impl eframe::App for App {
                         }
                     } else {
                         let label = if waiting > 0 {
-                            format!("Print ({waiting})")
+                            fill(&t.print_n_tpl, "n", &waiting.to_string())
                         } else {
-                            "Print".to_string()
+                            t.btn_print.clone()
                         };
                         if ui
                             .add_enabled(
@@ -823,9 +986,11 @@ impl eframe::App for App {
                     if ui
                         .add_enabled(
                             total > 0,
-                            egui::Button::new(RichText::new("Clear").size(13.5).color(theme::INK))
-                                .corner_radius(CornerRadius::same(9))
-                                .min_size(egui::vec2(0.0, 36.0)),
+                            egui::Button::new(
+                                RichText::new(&t.btn_clear).size(13.5).color(theme::INK),
+                            )
+                            .corner_radius(CornerRadius::same(9))
+                            .min_size(egui::vec2(0.0, 36.0)),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
@@ -837,11 +1002,9 @@ impl eframe::App for App {
                 if self.engine.is_none() {
                     ui.add_space(2.0);
                     ui.label(
-                        RichText::new(
-                            "No print engine — place pdfium.dll in the same folder as the program.",
-                        )
-                        .size(12.0)
-                        .color(theme::MAGENTA_TX),
+                        RichText::new(&t.warn_engine)
+                            .size(12.0)
+                            .color(theme::MAGENTA_TX),
                     );
                 }
 
@@ -850,9 +1013,10 @@ impl eframe::App for App {
                     ui.add_space(6.0);
                     let fin = done + errors;
                     let frac = fin as f32 / total as f32;
-                    let mut text = format!("Sent {fin} of {total}");
+                    let mut text = fill(&t.prog_sent_tpl, "done", &fin.to_string());
+                    text = fill(&text, "total", &total.to_string());
                     if errors > 0 {
-                        text.push_str(&format!(" · errors: {errors}"));
+                        text.push_str(&fill(&t.prog_errors_tpl, "n", &errors.to_string()));
                     }
                     progress_bar(ui, frac, &text);
                     if let Some((_, name, _)) = snapshot
@@ -860,7 +1024,7 @@ impl eframe::App for App {
                         .find(|(_, _, s)| *s == Status::Printing)
                     {
                         ui.label(
-                            RichText::new(format!("Printing: {name}"))
+                            RichText::new(fill(&t.prog_now_tpl, "name", name))
                                 .size(12.0)
                                 .color(theme::AMBER_TX),
                         );
@@ -884,14 +1048,14 @@ impl eframe::App for App {
                             ui.painter().text(
                                 c,
                                 Align2::CENTER_CENTER,
-                                "The queue is empty",
+                                &t.empty_title,
                                 FontId::proportional(14.0),
                                 theme::INK_SOFT,
                             );
                             ui.painter().text(
                                 egui::pos2(c.x, c.y + 24.0),
                                 Align2::CENTER_CENTER,
-                                "drop PDF files above to get started",
+                                &t.empty_sub,
                                 FontId::proportional(12.0),
                                 theme::INK_SOFT,
                             );
@@ -912,14 +1076,14 @@ impl eframe::App for App {
                             p.text(
                                 egui::pos2(hr.left() + 54.0, hr.center().y),
                                 Align2::LEFT_CENTER,
-                                "File",
+                                &t.col_file,
                                 FontId::proportional(11.0),
                                 theme::INK_SOFT,
                             );
                             p.text(
                                 egui::pos2(hr.right() - 58.0, hr.center().y),
                                 Align2::RIGHT_CENTER,
-                                "Status",
+                                &t.col_status,
                                 FontId::proportional(11.0),
                                 theme::INK_SOFT,
                             );
@@ -1062,10 +1226,14 @@ impl eframe::App for App {
                                         )
                                         .on_hover_text(path.display().to_string());
                                         // status badge
-                                        let (txt, tx, bc) = status.badge();
+                                        let (key, tx, bc) = status.badge();
                                         let galley = ui
                                             .painter()
-                                            .layout_no_wrap(txt, FontId::proportional(11.0), tx);
+                                            .layout_no_wrap(
+                                                t.status(key).to_owned(),
+                                                FontId::proportional(11.0),
+                                                tx,
+                                            );
                                         let bs = galley.size() + egui::vec2(16.0, 7.0);
                                         let brect = egui::Rect::from_min_size(
                                             egui::pos2(cell.right() - 46.0 - bs.x, cy - bs.y / 2.0),
@@ -1081,13 +1249,19 @@ impl eframe::App for App {
                                             galley,
                                             tx,
                                         );
-                                        if let Some(t) = status.tooltip() {
+                                        if status.tooltip_key().is_some() {
+                                            let tip = match status {
+                                                Status::Error(msg) => {
+                                                    fill(&t.err_tip_tpl, "msg", msg)
+                                                }
+                                                _ => t.st_sent_tip.clone(),
+                                            };
                                             ui.interact(
                                                 brect,
                                                 egui::Id::new(("badge", path)),
                                                 Sense::hover(),
                                             )
-                                            .on_hover_text(t);
+                                            .on_hover_text(tip);
                                         }
                                         // remove control: borderless red ×,
                                         // soft red circle + hand cursor on hover
@@ -1175,7 +1349,7 @@ impl eframe::App for App {
             let mut open = self.settings_open;
             let mut close = false;
             // exact window height for the content: base + optional lines
-            let mut h = 404.0;
+            let mut h = 452.0;
             if self.printing() {
                 h += 17.0;
             }
@@ -1190,7 +1364,7 @@ impl eframe::App for App {
                 .corner_radius(CornerRadius::same(10))
                 .stroke(Stroke::new(1.0_f32, theme::HAIRLINE))
                 .fill(theme::CARD);
-            egui::Window::new("Settings")
+            egui::Window::new(&t.set_title)
                 .id(egui::Id::new("settings-window"))
                 .default_pos(pos)
                 .fixed_size([390.0, h])
@@ -1201,16 +1375,41 @@ impl eframe::App for App {
                 .show(ctx, |ui| {
                     ui.set_width(336.0);
                     // ---- General ----
-                    settings_group(ui, "General", |ui| {
+                    settings_group(ui, &t.grp_general, |ui| {
                         ui.label(
-                            RichText::new("Printer")
+                            RichText::new(&t.lbl_language)
+                                .size(12.5)
+                                .color(theme::INK_SOFT),
+                        );
+                        let current = self.lang.file.clone();
+                        let current_name = self.lang.name.clone();
+                        egui::ComboBox::from_id_salt("language")
+                            .selected_text(
+                                RichText::new(current_name).size(13.0).color(theme::INK),
+                            )
+                            .width(312.0)
+                            .show_ui(ui, |ui| {
+                                for (file, name) in self.lang_files.clone() {
+                                    let is_sel = file == current;
+                                    if ui
+                                        .selectable_label(is_sel, &name)
+                                        .clicked()
+                                        && !is_sel
+                                    {
+                                        self.set_language(&file);
+                                    }
+                                }
+                            });
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new(&t.lbl_printer)
                                 .size(12.5)
                                 .color(theme::INK_SOFT),
                         );
                         let selected = if self.printer.is_empty() {
                             match &self.default_printer {
-                                Some(d) => format!("Default ({d})"),
-                                None => "Default".to_string(),
+                                Some(d) => fill(&t.def_printer_named_tpl, "name", d),
+                                None => t.def_printer.clone(),
                             }
                         } else {
                             self.printer.clone()
@@ -1223,110 +1422,180 @@ impl eframe::App for App {
                                 .width(312.0)
                                 .show_ui(ui, |ui| {
                                     let def_label = match &self.default_printer {
-                                        Some(d) => format!("Default ({d})"),
-                                        None => "Default".to_string(),
+                                        Some(d) => fill(&t.def_printer_named_tpl, "name", d),
+                                        None => t.def_printer.clone(),
                                     };
-                                    ui.selectable_value(&mut self.printer, String::new(), def_label);
+                                    if ui.selectable_value(
+                                        &mut self.printer,
+                                        String::new(),
+                                        def_label,
+                                    )
+                                    .changed()
+                                    {
+                                        self.save_cfg();
+                                    }
                                     for p in self.printers.clone() {
-                                        ui.selectable_value(&mut self.printer, p.clone(), p);
+                                        if ui
+                                            .selectable_value(&mut self.printer, p.clone(), p)
+                                            .changed()
+                                        {
+                                            self.save_cfg();
+                                        }
                                     }
                                 });
                         });
                         if self.printing() {
                             ui.label(
-                                RichText::new("applies from the next print job")
+                                RichText::new(&t.next_job_hint)
                                     .size(11.5)
                                     .color(theme::AMBER_TX),
                             );
                         }
                         ui.add_space(6.0);
-                        ui.checkbox(
-                            &mut self.autostart,
-                            RichText::new("Print immediately after adding files")
-                                .size(13.0)
-                                .color(theme::INK),
-                        )
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if ui
+                            .checkbox(
+                                &mut self.autostart,
+                                RichText::new(&t.autostart).size(13.0).color(theme::INK),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .changed()
+                        {
+                            self.save_cfg();
+                        }
                     });
                     // ---- Printing ----
-                    settings_group(ui, "Printing", |ui| {
-                        ui.label(RichText::new("Duplex").size(12.5).color(theme::INK_SOFT));
+                    settings_group(ui, &t.grp_printing, |ui| {
+                        ui.label(
+                            RichText::new(&t.lbl_duplex)
+                                .size(12.5)
+                                .color(theme::INK_SOFT),
+                        );
+                        let modes = [
+                            print::DuplexMode::Printer,
+                            print::DuplexMode::Simplex,
+                            print::DuplexMode::LongEdge,
+                            print::DuplexMode::ShortEdge,
+                        ];
+                        let sel = modes
+                            .iter()
+                            .position(|m| *m == self.pset.duplex)
+                            .unwrap_or(0);
                         egui::ComboBox::from_id_salt("duplex")
                             .selected_text(
-                                RichText::new(self.pset.duplex.label())
+                                RichText::new(&t.duplex_labels[sel])
                                     .size(13.0)
                                     .color(theme::INK),
                             )
                             .width(312.0)
                             .show_ui(ui, |ui| {
-                                for mode in [
-                                    print::DuplexMode::Printer,
-                                    print::DuplexMode::Simplex,
-                                    print::DuplexMode::LongEdge,
-                                    print::DuplexMode::ShortEdge,
-                                ] {
-                                    ui.selectable_value(&mut self.pset.duplex, mode, mode.label());
+                                for (i, m) in modes.iter().enumerate() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.pset.duplex,
+                                            *m,
+                                            t.duplex_labels[i].clone(),
+                                        )
+                                        .changed()
+                                    {
+                                        self.save_cfg();
+                                    }
                                 }
                             });
                         ui.add_space(6.0);
-                        ui.label(RichText::new("Color").size(12.5).color(theme::INK_SOFT));
+                        ui.label(
+                            RichText::new(&t.lbl_color)
+                                .size(12.5)
+                                .color(theme::INK_SOFT),
+                        );
+                        let modes = [
+                            print::ColorMode::Printer,
+                            print::ColorMode::Color,
+                            print::ColorMode::Grayscale,
+                        ];
+                        let sel = modes
+                            .iter()
+                            .position(|m| *m == self.pset.color)
+                            .unwrap_or(0);
                         egui::ComboBox::from_id_salt("color")
                             .selected_text(
-                                RichText::new(self.pset.color.label())
+                                RichText::new(&t.color_labels[sel])
                                     .size(13.0)
                                     .color(theme::INK),
                             )
                             .width(312.0)
                             .show_ui(ui, |ui| {
-                                for mode in [
-                                    print::ColorMode::Printer,
-                                    print::ColorMode::Color,
-                                    print::ColorMode::Grayscale,
-                                ] {
-                                    ui.selectable_value(&mut self.pset.color, mode, mode.label());
+                                for (i, m) in modes.iter().enumerate() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.pset.color,
+                                            *m,
+                                            t.color_labels[i].clone(),
+                                        )
+                                        .changed()
+                                    {
+                                        self.save_cfg();
+                                    }
                                 }
                             });
                         ui.add_space(6.0);
-                        ui.label(RichText::new("Paper size").size(12.5).color(theme::INK_SOFT));
+                        ui.label(
+                            RichText::new(&t.lbl_paper)
+                                .size(12.5)
+                                .color(theme::INK_SOFT),
+                        );
+                        let selected = if self.pset.paper.is_empty() {
+                            t.paper_default.clone()
+                        } else {
+                            self.pset.paper.clone()
+                        };
                         egui::ComboBox::from_id_salt("paper")
                             .selected_text(
-                                RichText::new(self.pset.paper.label())
-                                    .size(13.0)
-                                    .color(theme::INK),
+                                RichText::new(selected).size(13.0).color(theme::INK),
                             )
                             .width(312.0)
                             .show_ui(ui, |ui| {
-                                for mode in [
-                                    print::PaperMode::Printer,
-                                    print::PaperMode::A4,
-                                    print::PaperMode::Letter,
-                                ] {
-                                    ui.selectable_value(&mut self.pset.paper, mode, mode.label());
+                                if ui
+                                    .selectable_value(
+                                        &mut self.pset.paper,
+                                        String::new(),
+                                        t.paper_default.clone(),
+                                    )
+                                    .changed()
+                                {
+                                    self.save_cfg();
+                                }
+                                for p in print::PAPERS {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.pset.paper,
+                                            p.code.to_string(),
+                                            p.code,
+                                        )
+                                        .changed()
+                                    {
+                                        self.save_cfg();
+                                    }
                                 }
                             });
                     });
                     // ---- footer ----
                     ui.add_space(6.0);
-                    if let Some(engine) = &self.engine {
+                    if matches!(
+                        self.engine,
+                        Some(print::EngineKind::PdfToPrinter(_))
+                    ) {
                         ui.label(
-                            RichText::new(format!("Print engine: {}", engine.label()))
+                            RichText::new(&t.legacy_note)
                                 .size(11.5)
-                                .color(theme::INK_SOFT),
+                                .color(theme::AMBER_TX),
                         );
-                        if matches!(engine, print::EngineKind::PdfToPrinter(_)) {
-                            ui.label(
-                                RichText::new("print options need the built-in engine")
-                                    .size(11.5)
-                                    .color(theme::AMBER_TX),
-                            );
-                        }
                     }
                     ui.add_space(6.0);
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Close").size(13.0).color(theme::INK),
+                                    RichText::new(&t.close).size(13.0).color(theme::INK),
                                 )
                                 .corner_radius(CornerRadius::same(8))
                                 .min_size(egui::vec2(88.0, 28.0)),

@@ -17,6 +17,12 @@ status of every file. Each PDF arrives as a separate print job.
 - **Stop** — finishes the current file, never cuts it in half
 - **Clear** — empties the queue, **×** — removes single files
 - optional **"Print immediately after adding files"** mode
+- **multiple languages** — plain JSON files in `lang/`; drop in a new
+  `xx.json` to add a language (English and Polish are included);
+  the chosen language and all settings are remembered
+- paper-size override: ISO A0–A7, B0–B6, C4–C6, DL and Letter
+- duplex and color overrides (printer default / one-sided / two-sided,
+  color / grayscale)
 - light "paper & CMYK" visual theme, filenames set in Consolas
 
 ## Download
@@ -27,6 +33,7 @@ page, unzip, and keep the layout as-is:
 ```
 easytoprint.exe   <- the program
 lib/pdfium.dll    <- the PDF rendering library (required)
+lang/             <- interface languages (en, pl, …)
 ```
 
 ## How it works

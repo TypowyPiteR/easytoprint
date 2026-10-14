@@ -1,0 +1,62 @@
+{
+  "name": "English",
+  "strings": {
+    "files.one": "1 file",
+    "files.many": "{n} files",
+
+    "drop.main": "Drag & drop PDF files",
+    "drop.sub": "or click here to browse files",
+    "drop.active": "Drop to add to the queue",
+    "drop.add": "Add: {names}",
+
+    "btn.print": "Print",
+    "btn.printN": "Print ({n})",
+    "btn.printing": "Printing…",
+    "btn.stop": "Stop",
+    "btn.clear": "Clear",
+
+    "warn.engine": "No print engine — place lib/pdfium.dll next to the program.",
+
+    "progress.sent": "Sent {done} of {total}",
+    "progress.errors": " · errors: {n}",
+    "progress.now": "Printing: {name}",
+
+    "queue.empty.title": "The queue is empty",
+    "queue.empty.sub": "drop PDF files above to get started",
+    "queue.col.file": "File",
+    "queue.col.status": "Status",
+
+    "status.waiting": "Waiting",
+    "status.printing": "Printing…",
+    "status.sent": "Sent",
+    "status.error": "Error",
+    "status.sent.tip": "Sent to the printer",
+    "status.error.tip": "Error: {msg}",
+
+    "settings.title": "Settings",
+    "settings.group.general": "GENERAL",
+    "settings.group.printing": "PRINTING",
+    "settings.language": "Language",
+    "settings.printer": "Printer",
+    "settings.printer.default": "Default",
+    "settings.printer.defaultNamed": "Default ({name})",
+    "settings.nextJob": "applies from the next print job",
+    "settings.autostart": "Print immediately after adding files",
+    "settings.duplex": "Duplex",
+    "settings.color": "Color",
+    "settings.paper": "Paper size",
+    "settings.paper.default": "Printer default",
+    "settings.legacyNote": "print options need the built-in engine",
+    "settings.close": "Close",
+    "settings.tip": "Settings",
+
+    "duplex.printer": "Printer default",
+    "duplex.simplex": "One-sided",
+    "duplex.long": "Two-sided (long edge)",
+    "duplex.short": "Two-sided (short edge)",
+
+    "color.printer": "Printer default",
+    "color.color": "Color",
+    "color.grayscale": "Grayscale"
+  }
+}

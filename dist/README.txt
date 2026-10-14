@@ -3,9 +3,10 @@ EasyToPrint — bulk PDF printing
 
 Getting started
 ---------------
-1) Make sure BOTH of these are in place:
+1) Make sure the layout is in place:
    - easytoprint.exe
    - lib\pdfium.dll        (the PDF rendering library)
+   - lang\                 (interface languages)
 
 2) Run easytoprint.exe.
 
@@ -25,10 +26,15 @@ Error               - something went wrong (details on badge hover)
 
 Settings (gear button, top-right corner)
 ----------------------------------------
-Printer                        - pick a printer from the system list
-                                 ("Default" = the Windows default printer)
+Language                     - interface language (add more via lang\*.json)
+Printer                      - pick a printer from the system list
+                               ("Default" = the Windows default printer)
+Duplex / Color / Paper size  - overrides for every print job
+                               ("Printer default" = as configured in Windows)
 Print immediately after adding - when checked, printing starts on its own
                                  as soon as files are added
+
+All settings are remembered between runs (easytoprint.json next to the exe).
 
 Other controls
 --------------

@@ -54,13 +54,6 @@ impl EngineKind {
         }
         None
     }
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            EngineKind::Builtin => "built-in (PDFium)",
-            EngineKind::PdfToPrinter(_) => "external (legacy)",
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -87,52 +80,95 @@ pub enum ColorMode {
     Grayscale,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum PaperMode {
-    #[default]
-    Printer,
-    A4,
-    Letter,
-}
-
-/// Overrides applied to every print job. `Printer` variants mean
-/// "leave whatever Windows has configured as the printer default".
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct PrintSettings {
-    pub duplex: DuplexMode,
-    pub color: ColorMode,
-    pub paper: PaperMode,
-}
-
 impl DuplexMode {
-    pub fn label(&self) -> &'static str {
+    pub fn code(&self) -> &'static str {
         match self {
-            DuplexMode::Printer => "Printer default",
-            DuplexMode::Simplex => "One-sided",
-            DuplexMode::LongEdge => "Two-sided (long edge)",
-            DuplexMode::ShortEdge => "Two-sided (short edge)",
+            DuplexMode::Printer => "printer",
+            DuplexMode::Simplex => "simplex",
+            DuplexMode::LongEdge => "long",
+            DuplexMode::ShortEdge => "short",
+        }
+    }
+
+    pub fn from_code(code: &str) -> DuplexMode {
+        match code {
+            "simplex" => DuplexMode::Simplex,
+            "long" => DuplexMode::LongEdge,
+            "short" => DuplexMode::ShortEdge,
+            _ => DuplexMode::Printer,
         }
     }
 }
 
 impl ColorMode {
-    pub fn label(&self) -> &'static str {
+    pub fn code(&self) -> &'static str {
         match self {
-            ColorMode::Printer => "Printer default",
-            ColorMode::Color => "Color",
-            ColorMode::Grayscale => "Grayscale",
+            ColorMode::Printer => "printer",
+            ColorMode::Color => "color",
+            ColorMode::Grayscale => "gray",
+        }
+    }
+
+    pub fn from_code(code: &str) -> ColorMode {
+        match code {
+            "color" => ColorMode::Color,
+            "gray" => ColorMode::Grayscale,
+            _ => ColorMode::Printer,
         }
     }
 }
 
-impl PaperMode {
-    pub fn label(&self) -> &'static str {
-        match self {
-            PaperMode::Printer => "Printer default",
-            PaperMode::A4 => "A4",
-            PaperMode::Letter => "Letter",
-        }
-    }
+/// One selectable paper size. Standard formats use the Windows DMPAPER
+/// constant; the rest set explicit dimensions (tenths of a millimetre).
+pub struct PaperDef {
+    /// stable code, also the display label (A4, DL, Letter…)
+    pub code: &'static str,
+    /// DMPAPER_* constant when the format is standard
+    pub dm: Option<u32>,
+    /// (width, length) in 0.1 mm for custom sizes
+    pub tenths_mm: Option<(i32, i32)>,
+}
+
+macro_rules! paper {
+    ($code:literal, dm $dm:expr) => {
+        PaperDef { code: $code, dm: Some($dm), tenths_mm: None }
+    };
+    ($code:literal, mm $w:literal x $l:literal) => {
+        PaperDef { code: $code, dm: None, tenths_mm: Some(($w, $l)) }
+    };
+}
+
+pub const PAPERS: &[PaperDef] = &[
+    paper!("A0", mm 8410 x 11890),
+    paper!("A1", mm 5940 x 8410),
+    paper!("A2", dm 66),
+    paper!("A3", dm 8),
+    paper!("A4", dm 9),
+    paper!("A5", dm 11),
+    paper!("A6", dm 70),
+    paper!("A7", mm 740 x 1050),
+    paper!("B0", mm 10000 x 14140),
+    paper!("B1", mm 7070 x 10000),
+    paper!("C4", mm 2290 x 3240),
+    paper!("C5", mm 1620 x 2290),
+    paper!("C6", mm 1140 x 1620),
+    paper!("DL", mm 1100 x 2200),
+    paper!("B2", mm 5000 x 7070),
+    paper!("B3", mm 3530 x 5000),
+    paper!("B4", dm 42),
+    paper!("B5", dm 13),
+    paper!("B6", mm 1250 x 1760),
+    paper!("Letter", dm 1),
+];
+
+/// Overrides applied to every print job. "Printer" variants / empty paper
+/// mean "leave whatever Windows has configured as the printer default".
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct PrintSettings {
+    pub duplex: DuplexMode,
+    pub color: ColorMode,
+    /// paper code (PAPERS entry); empty = printer default
+    pub paper: String,
 }
 
 /// Writes the chosen overrides into a DEVMODE struct (pure — unit-testable).
@@ -140,7 +176,7 @@ impl PaperMode {
 fn apply_settings(dm: &mut windows_sys::Win32::Graphics::Gdi::DEVMODEW, s: &PrintSettings) {
     use windows_sys::Win32::Graphics::Gdi::{
         DMCOLOR_COLOR, DMCOLOR_MONOCHROME, DMDUP_HORIZONTAL, DMDUP_SIMPLEX, DMDUP_VERTICAL,
-        DMPAPER_A4, DMPAPER_LETTER, DM_COLOR, DM_DUPLEX, DM_PAPERSIZE,
+        DMPAPER_USER, DM_COLOR, DM_DUPLEX, DM_PAPERLENGTH, DM_PAPERSIZE, DM_PAPERWIDTH,
     };
     match s.duplex {
         DuplexMode::Printer => {}
@@ -168,15 +204,21 @@ fn apply_settings(dm: &mut windows_sys::Win32::Graphics::Gdi::DEVMODEW, s: &Prin
             dm.dmFields |= DM_COLOR;
         }
     }
-    match s.paper {
-        PaperMode::Printer => {}
-        PaperMode::A4 => {
-            dm.Anonymous1.Anonymous1.dmPaperSize = DMPAPER_A4 as i16;
-            dm.dmFields |= DM_PAPERSIZE;
-        }
-        PaperMode::Letter => {
-            dm.Anonymous1.Anonymous1.dmPaperSize = DMPAPER_LETTER as i16;
-            dm.dmFields |= DM_PAPERSIZE;
+    if !s.paper.is_empty() {
+        if let Some(p) = PAPERS.iter().find(|p| p.code == s.paper) {
+            match (p.dm, p.tenths_mm) {
+                (Some(constant), _) => {
+                    dm.Anonymous1.Anonymous1.dmPaperSize = constant as i16;
+                    dm.dmFields |= DM_PAPERSIZE;
+                }
+                (None, Some((w, l))) => {
+                    dm.Anonymous1.Anonymous1.dmPaperSize = DMPAPER_USER as i16;
+                    dm.Anonymous1.Anonymous1.dmPaperLength = l as i16;
+                    dm.Anonymous1.Anonymous1.dmPaperWidth = w as i16;
+                    dm.dmFields |= DM_PAPERLENGTH | DM_PAPERWIDTH;
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -566,13 +608,13 @@ mod tests {
         }
         use windows_sys::Win32::Graphics::Gdi::{
             DMCOLOR_MONOCHROME, DMDUP_VERTICAL, DMPAPER_A4, DM_COLOR, DM_DUPLEX, DM_PAPERSIZE,
-            DEVMODEW,
+            DM_PAPERLENGTH, DM_PAPERWIDTH, DEVMODEW,
         };
         let mut dm = DEVMODEW::default();
         let s = PrintSettings {
             duplex: DuplexMode::LongEdge,
             color: ColorMode::Grayscale,
-            paper: PaperMode::A4,
+            paper: "A4".into(),
         };
         apply_settings(&mut dm, &s);
         assert_eq!(dm.dmDuplex, DMDUP_VERTICAL);
@@ -581,6 +623,21 @@ mod tests {
         assert_eq!(dm.dmFields & DM_DUPLEX, DM_DUPLEX);
         assert_eq!(dm.dmFields & DM_COLOR, DM_COLOR);
         assert_eq!(dm.dmFields & DM_PAPERSIZE, DM_PAPERSIZE);
+
+        // custom-size paper (no DMPAPER constant) → explicit dimensions
+        let mut dm = DEVMODEW::default();
+        apply_settings(
+            &mut dm,
+            &PrintSettings {
+                paper: "B6".into(),
+                ..PrintSettings::default()
+            },
+        );
+        assert_eq!(unsafe { dm.Anonymous1.Anonymous1.dmPaperWidth }, 1250);
+        assert_eq!(unsafe { dm.Anonymous1.Anonymous1.dmPaperLength }, 1760);
+        assert_eq!(dm.dmFields & DM_PAPERLENGTH, DM_PAPERLENGTH);
+        assert_eq!(dm.dmFields & DM_PAPERWIDTH, DM_PAPERWIDTH);
+
         // "Printer default" must leave the DEVMODE untouched
         let mut dm = DEVMODEW::default();
         apply_settings(&mut dm, &PrintSettings::default());
