@@ -24,6 +24,10 @@ const DEFAULT_PRINTER: &str = "Canon MF750C Series UFR II";
 
 /// queue row height (fixed — rows never stretch)
 const ROW_H: f32 = 34.0;
+/// vertical gap between rows (the separator sits in its middle)
+const ROW_GAP: f32 = 6.0;
+/// distance between row tops
+const STRIDE: f32 = ROW_H + ROW_GAP;
 /// table header height
 const HEAD_H: f32 = 24.0;
 /// width of the status column (badge + remove button)
@@ -133,6 +137,23 @@ fn add_unique(queue: &mut Vec<Job>, path: PathBuf) {
     if !queue.iter().any(|j| j.path == path) {
         queue.push(Job::new(path));
     }
+}
+
+/// Moves the element at `src` into insertion slot `dst_slot` (0..=len,
+/// exactly where the drop indicator line was shown).
+fn apply_reorder<T>(v: &mut Vec<T>, src: usize, dst_slot: usize) {
+    if src >= v.len() || dst_slot > v.len() {
+        return;
+    }
+    let item = v.remove(src);
+    let ins = if dst_slot > src { dst_slot - 1 } else { dst_slot };
+    v.insert(ins.min(v.len()), item);
+}
+
+/// ETP_DEBUG=1 draws guide lines at row tops/bottoms/centers.
+fn debug_geometry() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ETP_DEBUG").is_ok())
 }
 
 // ---------------------------------------------------------------------------
@@ -891,39 +912,45 @@ impl eframe::App for App {
 
                             let mut rm: Option<usize> = None;
                             let mut dragging_now: Option<(usize, usize)> = None;
-                            let mut list_top: Option<f32> = None;
+                            let mut first_top: Option<f32> = None;
+                            let debug_lines = debug_geometry();
+                            ui.spacing_mut().item_spacing.y = ROW_GAP;
                             ScrollArea::vertical()
                                 .auto_shrink([false, false])
-                                .show_rows(ui, ROW_H, total, |ui, range| {
-                                    for i in range {
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.y = ROW_GAP;
+                                    for i in 0..total {
                                         let (path, name, status) = &snapshot[i];
-                                        let row_rect = egui::Rect::from_min_size(
-                                            ui.cursor().min,
+                                        // egui allocates the exact row; its rect is the
+                                        // single source of truth for everything below
+                                        let (cell, _) = ui.allocate_exact_size(
                                             egui::vec2(ui.available_width(), ROW_H),
+                                            Sense::hover(),
                                         );
-                                        let resp = ui
-                                            .allocate_rect(row_rect, Sense::click_and_drag());
-                                        let alloc = row_rect;
-                                        if list_top.is_none() {
-                                            list_top =
-                                                Some(alloc.top() - i as f32 * ROW_H);
+                                        if first_top.is_none() {
+                                            first_top = Some(cell.top());
                                         }
-                                        let hovered = ui.rect_contains_pointer(alloc);
+                                        // hover + drag on the whole cell
+                                        let resp = ui.interact(
+                                            cell,
+                                            egui::Id::new(("row", path)),
+                                            Sense::click_and_drag(),
+                                        );
+                                        let hovered = ui.rect_contains_pointer(cell);
                                         let is_dragged = resp.dragged();
                                         if is_dragged {
                                             if let Some(pos) = resp.interact_pointer_pos() {
-                                                if let Some(top) = list_top {
-                                                    let dst = (((pos.y - top) / ROW_H).round()
-                                                        as i64)
-                                                        .clamp(0, total as i64)
-                                                        as usize;
+                                                if let Some(top) = first_top {
+                                                    let dst =
+                                                        (((pos.y - top + ROW_GAP / 2.0) / STRIDE)
+                                                            .floor() as i64)
+                                                            .clamp(0, total as i64)
+                                                            as usize;
                                                     dragging_now = Some((i, dst));
                                                 }
                                             }
                                         }
-                                        // row background (hover across the whole row),
-                                        // inset 2 px top and bottom so it never touches
-                                        // the separator lines
+                                        // cell background — the hover field IS the cell
                                         let bg = match status {
                                             Status::Printing => {
                                                 Some(Color32::from_rgb(255, 246, 221))
@@ -935,60 +962,49 @@ impl eframe::App for App {
                                             _ => None,
                                         };
                                         if let Some(bg) = bg {
-                                            ui.painter().rect_filled(
-                                                egui::Rect::from_min_max(
-                                                    egui::pos2(
-                                                        alloc.left() + 2.0,
-                                                        alloc.top() + 2.0,
-                                                    ),
-                                                    egui::pos2(
-                                                        alloc.right() - 2.0,
-                                                        alloc.bottom() - 2.0,
-                                                    ),
-                                                ),
-                                                CornerRadius::same(6),
-                                                bg,
+                                            ui.painter()
+                                                .rect_filled(cell, CornerRadius::same(6), bg);
+                                        }
+                                        if debug_lines {
+                                            let p = ui.painter();
+                                            let thin = Stroke::new(1.0_f32, Color32::RED);
+                                            p.line_segment(
+                                                [
+                                                    cell.left_top(),
+                                                    egui::pos2(cell.right(), cell.top()),
+                                                ],
+                                                thin,
+                                            );
+                                            p.line_segment(
+                                                [
+                                                    egui::pos2(cell.left(), cell.bottom()),
+                                                    cell.right_bottom(),
+                                                ],
+                                                Stroke::new(1.0_f32, Color32::BLUE),
+                                            );
+                                            p.line_segment(
+                                                [
+                                                    egui::pos2(cell.left(), cell.center().y),
+                                                    egui::pos2(cell.right(), cell.center().y),
+                                                ],
+                                                Stroke::new(1.0_f32, Color32::GREEN),
                                             );
                                         }
-                                        // drop indicator: accent line at the target slot
-                                        if let Some((_, dst)) = dragging_now {
-                                            let on_top = dst == i;
-                                            let on_bottom =
-                                                dst == i + 1 && i + 1 == total;
-                                            if on_top || on_bottom {
-                                                let y = if on_top {
-                                                    alloc.top()
-                                                } else {
-                                                    alloc.bottom()
-                                                };
-                                                ui.painter().line_segment(
-                                                    [
-                                                        egui::pos2(alloc.left() + 8.0, y),
-                                                        egui::pos2(alloc.right() - 8.0, y),
-                                                    ],
-                                                    Stroke::new(2.5_f32, theme::ACCENT),
-                                                );
-                                            }
-                                        }
-                                        let cy = alloc.center().y;
+                                        let cy = cell.center().y;
                                         // row number (+1 px optical: digits have no
                                         // descenders, the line box sits low)
                                         ui.painter().text(
-                                            egui::pos2(alloc.left() + 38.0, cy + 1.0),
+                                            egui::pos2(cell.left() + 38.0, cy + 1.0),
                                             Align2::RIGHT_CENTER,
                                             format!("{}", i + 1),
                                             FontId::monospace(11.5),
                                             theme::INK_SOFT,
                                         );
-                                        // file name — painted directly for pixel-perfect
-                                        // vertical centering; truncated with an ellipsis,
-                                        // full path shown in a single tooltip.
-                                        // +1.5 px optical: centers the glyphs, not the
-                                        // line box (bottom leading space would push the
-                                        // text visually up)
+                                        // file name (+1.5 px optical nudge: centers the
+                                        // glyphs, not the line box)
                                         let name_rect = egui::Rect::from_min_max(
-                                            egui::pos2(alloc.left() + 54.0, alloc.top() + 3.0),
-                                            egui::pos2(alloc.right() - RIGHT_ZONE, alloc.bottom() - 3.0),
+                                            egui::pos2(cell.left() + 54.0, cell.top()),
+                                            egui::pos2(cell.right() - RIGHT_ZONE, cell.bottom()),
                                         );
                                         let font = FontId::monospace(12.5);
                                         let mut gal = ui
@@ -1028,7 +1044,7 @@ impl eframe::App for App {
                                             .layout_no_wrap(txt, FontId::proportional(11.0), tx);
                                         let bs = galley.size() + egui::vec2(16.0, 7.0);
                                         let brect = egui::Rect::from_min_size(
-                                            egui::pos2(alloc.right() - 46.0 - bs.x, cy - bs.y / 2.0),
+                                            egui::pos2(cell.right() - 46.0 - bs.x, cy - bs.y / 2.0),
                                             bs,
                                         );
                                         ui.painter().rect_filled(
@@ -1053,7 +1069,7 @@ impl eframe::App for App {
                                         // soft red circle + hand cursor on hover
                                         if *status != Status::Printing {
                                             let xr = egui::Rect::from_center_size(
-                                                egui::pos2(alloc.right() - 21.0, cy),
+                                                egui::pos2(cell.right() - 21.0, cy),
                                                 egui::vec2(28.0, 28.0),
                                             );
                                             let resp = ui.interact(
@@ -1082,18 +1098,31 @@ impl eframe::App for App {
                                                 rm = Some(i);
                                             }
                                         }
-                                        // separator exactly on the row boundary —
-                                        // equal distance to both rows
+                                        // separator in the MIDDLE of the gap below the
+                                        // cell — symmetric margins by construction
                                         if i + 1 < total {
-                                            let y = alloc.bottom();
+                                            let y = cell.bottom() + ROW_GAP / 2.0;
                                             ui.painter().line_segment(
                                                 [
-                                                    egui::pos2(alloc.left() + 14.0, y),
-                                                    egui::pos2(alloc.right() - 14.0, y),
+                                                    egui::pos2(cell.left() + 14.0, y),
+                                                    egui::pos2(cell.right() - 14.0, y),
                                                 ],
                                                 Stroke::new(1.0_f32, theme::HAIRLINE),
                                             );
                                         }
+                                    }
+                                    // drop indicator — drawn once, after all rows,
+                                    // exactly at the slot the pointer maps to
+                                    if let (Some((_, dst)), Some(top)) =
+                                        (dragging_now, first_top)
+                                    {
+                                        let y = top + dst as f32 * STRIDE - ROW_GAP / 2.0;
+                                        let l = ui.min_rect().left() + 8.0;
+                                        let r = ui.min_rect().right() - 8.0;
+                                        ui.painter().line_segment(
+                                            [egui::pos2(l, y), egui::pos2(r, y)],
+                                            Stroke::new(2.5_f32, theme::ACCENT),
+                                        );
                                     }
                                 });
                             if let Some(i) = rm {
@@ -1103,12 +1132,7 @@ impl eframe::App for App {
                             if let Some((s, d)) = dragging_now {
                                 self.drag = Some((s, d));
                             } else if let Some((s, d)) = self.drag.take() {
-                                let mut g = self.queue.lock().unwrap();
-                                if s < g.len() {
-                                    let job = g.remove(s);
-                                    let d = if d > s { d - 1 } else { d }.min(g.len());
-                                    g.insert(d, job);
-                                }
+                                apply_reorder(&mut self.queue.lock().unwrap(), s, d);
                             }
                         }
                     });
@@ -1271,5 +1295,36 @@ mod tests {
         add_unique(&mut q, PathBuf::from("C:/b.pdf"));
         assert_eq!(q.len(), 2);
         assert!(q.iter().all(|j| j.status == Status::Waiting));
+    }
+
+    #[test]
+    fn reorder_moves_elements_correctly() {
+        // drag first to the very end
+        let mut v = vec![10, 20, 30];
+        apply_reorder(&mut v, 0, 3);
+        assert_eq!(v, vec![20, 30, 10]);
+        // drag first between rows 1 and 2
+        let mut v = vec![10, 20, 30];
+        apply_reorder(&mut v, 0, 2);
+        assert_eq!(v, vec![20, 10, 30]);
+        // drag last to the front
+        let mut v = vec![10, 20, 30];
+        apply_reorder(&mut v, 2, 0);
+        assert_eq!(v, vec![30, 10, 20]);
+        // drop back onto the same slot — no change
+        let mut v = vec![10, 20, 30];
+        apply_reorder(&mut v, 1, 1);
+        assert_eq!(v, vec![10, 20, 30]);
+        apply_reorder(&mut v, 1, 2);
+        assert_eq!(v, vec![10, 20, 30]);
+        // single element, clamped destination
+        let mut v = vec![10];
+        apply_reorder(&mut v, 0, 1);
+        assert_eq!(v, vec![10]);
+        // out-of-range source/destination are ignored
+        let mut v = vec![10, 20];
+        apply_reorder(&mut v, 5, 0);
+        apply_reorder(&mut v, 0, 9);
+        assert_eq!(v, vec![10, 20]);
     }
 }
