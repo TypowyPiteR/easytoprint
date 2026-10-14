@@ -1,6 +1,6 @@
 [package]
 name = "easytoprint"
-version = "1.2.0"
+version = "0.1.2"
 edition = "2021"
 description = "Masowy druk PDF - kolejka z drag & drop"
 
