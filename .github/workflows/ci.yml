@@ -33,14 +33,14 @@ jobs:
       - name: Build and test
         shell: msys2 {0}
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
+          export PATH="$(cygpath "$CARGO_HOME")/bin:$PATH"
           cargo build --release
           cargo test --release
 
       - name: Package artifact
         shell: msys2 {0}
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
+          export PATH="$(cygpath "$CARGO_HOME")/bin:$PATH"
           mkdir -p artifact/lib artifact/lang
           cp target/release/easytoprint.exe artifact/
           cp lang/*.json artifact/lang/
