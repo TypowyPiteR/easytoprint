@@ -7,6 +7,10 @@ Drop dozens of documents at once (invoices, contracts, reports) and the app
 queues them and sends them to the printer **one by one**, showing the live
 status of every file. Each PDF arrives as a separate print job.
 
+## Screenshot
+
+![EasyToPrint](docs/screenshot.png)
+
 ## Features
 
 - **drag & drop** of many PDF files at once — add more at any time, even mid-print
