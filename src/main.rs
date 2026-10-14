@@ -953,9 +953,10 @@ impl eframe::App for App {
 
         let t = UiTexts::build(&self.lang);
 
-        // rounded window corners (hidden when maximized)
-        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-        let corner = if maximized { 0 } else { 12 };
+        // window corners: true transparency isn't reliably supported on
+        // Windows + OpenGL (the alpha renders as black), so the window
+        // stays square — 0 also squares the close-button hover fill
+        let corner: u8 = 0;
 
         // title bar flush to the top edges
         egui::TopBottomPanel::top("app-titlebar")
@@ -2051,7 +2052,6 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("EasyToPrint — bulk PDF printing")
         .with_decorations(false)
-        .with_transparent(true)
         .with_inner_size([620.0, 860.0])
         .with_min_inner_size([480.0, 560.0]);
     if let Some(icon) = icon {
