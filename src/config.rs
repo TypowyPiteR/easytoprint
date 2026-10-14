@@ -38,11 +38,25 @@ impl Config {
         }
     }
 
-    /// Config file location: next to the executable.
+    /// Config file location: next to the executable when the folder is
+    /// writable (portable layout), otherwise %APPDATA%\EasyToPrint
+    /// (installed under Program Files).
     pub fn path() -> Option<std::path::PathBuf> {
-        std::env::current_exe()
-            .ok()?
-            .parent()
-            .map(|d| d.join("easytoprint.json"))
+        let exe = std::env::current_exe().ok()?;
+        let dir = exe.parent()?.to_path_buf();
+        let probe = dir.join(".etp-write-test");
+        match std::fs::write(&probe, b"") {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&probe);
+                Some(dir.join("easytoprint.json"))
+            }
+            Err(_) => {
+                let base = std::env::var("APPDATA")
+                    .ok()
+                    .map(|a| std::path::PathBuf::from(a).join("EasyToPrint"))?;
+                let _ = std::fs::create_dir_all(&base);
+                Some(base.join("easytoprint.json"))
+            }
+        }
     }
 }

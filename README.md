@@ -27,13 +27,16 @@ status of every file. Each PDF arrives as a separate print job.
 
 ## Download
 
-Grab the latest build from the **[Releases](https://github.com/TypowyPiteR/easytoprint/releases)**
-page, unzip, and keep the layout as-is:
+The **[Releases](https://github.com/TypowyPiteR/easytoprint/releases)** page offers:
+
+- **EasyToPrint-Setup-x.y.z.exe** — a classic installer (Inno Setup, English/Polish):
+  installs into Program Files, creates the desktop shortcut and an uninstaller;
+- **EasyToPrint-x.y.z-win64.zip** — portable build, unzip anywhere and run:
 
 ```
 easytoprint.exe   <- the program
 lib/pdfium.dll    <- the PDF rendering library (required)
-lang/             <- interface languages (en, pl, …)
+lang/             <- interface languages (all 24 official EU languages)
 ```
 
 ## How it works
