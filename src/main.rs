@@ -18,6 +18,7 @@ use eframe::egui::{
 mod config;
 mod lang;
 mod print;
+mod shell;
 
 use config::Config;
 use lang::Lang;
@@ -614,6 +615,7 @@ struct UiTexts {
     gear_tip: String,
     next_job_hint: String,
     autostart: String,
+    explorer_menu: String,
     // templates with placeholders
     files_many_tpl: String,
     print_n_tpl: String,
@@ -664,6 +666,7 @@ impl UiTexts {
             gear_tip: lang.tr("settings.tip"),
             next_job_hint: lang.tr("settings.nextJob"),
             autostart: lang.tr("settings.autostart"),
+            explorer_menu: lang.tr("settings.explorerMenu"),
             files_many_tpl: lang.tr("files.many"),
             print_n_tpl: lang.tr("btn.printN"),
             drop_add_tpl: lang.tr("drop.add"),
@@ -754,10 +757,12 @@ struct App {
     ghost_seq: u64,
     /// last known status of each row (to animate status changes)
     last_status: std::collections::HashMap<PathBuf, Status>,
+    /// Explorer context-menu integration state (the registry is the truth)
+    explorer_menu: bool,
 }
 
 impl App {
-    fn new(cc: &eframe::CreationContext) -> Self {
+    fn new(cc: &eframe::CreationContext, initial: Vec<PathBuf>) -> Self {
         install_fonts(&cc.egui_ctx);
         apply_theme(&cc.egui_ctx);
         let cfg = Config::path()
@@ -779,7 +784,7 @@ impl App {
         };
         let queue: Queue = Arc::new(Mutex::new(Vec::new()));
         // hidden demo mode (ETP_DEMO=1) — UI preview with a fake queue
-        if std::env::var("ETP_DEMO").is_ok() {
+        if std::env::var("ETP_DEMO").is_ok() && initial.is_empty() {
             let demo: &[(&str, Status)] = &[
                 ("invoice_2026-10-01_kowalski.pdf", Status::Done),
                 ("invoice_2026-10-02_nowak.pdf", Status::Done),
@@ -803,6 +808,8 @@ impl App {
                     status: s.clone(),
                 })
                 .collect();
+        } else if !initial.is_empty() {
+            *queue.lock().unwrap() = initial.iter().map(|p| Job::new(p.clone())).collect();
         }
         Self {
             queue,
@@ -826,6 +833,7 @@ impl App {
             ghosts: Vec::new(),
             ghost_seq: 0,
             last_status: std::collections::HashMap::new(),
+            explorer_menu: shell::menu_registered(),
         }
     }
 
@@ -850,6 +858,12 @@ impl App {
     fn set_language(&mut self, file: &str) {
         self.lang = Lang::load(lang::lang_dir().as_deref(), file);
         self.save_cfg();
+        // refresh the context-menu label to the new language
+        if self.explorer_menu {
+            if let Some(exe) = std::env::current_exe().ok() {
+                self.explorer_menu = shell::register_menu(&self.lang.tr("explorer.add"), &exe);
+            }
+        }
     }
 
     /// Starts the fade-out animation of a removed row.
@@ -899,6 +913,19 @@ impl eframe::App for App {
                 add_unique(&mut q, p);
             }
         }
+
+        // 1b. Files forwarded from other instances (Explorer context menu)
+        let inbox_files = shell::take_inbox();
+        let files_forwarded = !inbox_files.is_empty();
+        if files_forwarded {
+            let mut q = self.queue.lock().unwrap();
+            for p in inbox_files {
+                add_unique(&mut q, p);
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        // keep polling the inbox even when idle
+        ctx.request_repaint_after(Duration::from_millis(300));
 
         // 2. Reap a finished worker thread
         if self.worker.as_ref().map(|h| h.is_finished()).unwrap_or(false) {
@@ -1845,6 +1872,25 @@ impl eframe::App for App {
                         {
                             self.save_cfg();
                         }
+                        if ui
+                            .checkbox(
+                                &mut self.explorer_menu,
+                                RichText::new(&t.explorer_menu)
+                                    .size(13.0)
+                                    .color(theme::INK),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .changed()
+                        {
+                            if self.explorer_menu {
+                                if let Some(exe) = std::env::current_exe().ok() {
+                                    self.explorer_menu =
+                                        shell::register_menu(&self.lang.tr("explorer.add"), &exe);
+                                }
+                            } else {
+                                shell::unregister_menu();
+                            }
+                        }
                     });
                     // ---- Printing ----
                     settings_group(ui, &t.grp_printing, |ui| {
@@ -2041,13 +2087,29 @@ impl eframe::App for App {
         self.ghosts.retain(|gh| {
             ctx.animate_value_with_time(egui::Id::new(("ghost", gh.key)), 0.0, 0.3) > 0.02
         });
-        if action_start || ((files_added || files_picked) && self.autostart) {
+        if action_start
+            || ((files_added || files_picked || files_forwarded) && self.autostart)
+        {
             self.start_worker();
         }
     }
 }
 
 fn main() -> eframe::Result<()> {
+    // files passed on the command line (e.g. from the Explorer context menu)
+    let initial: Vec<PathBuf> = std::env::args()
+        .skip(1)
+        .map(PathBuf::from)
+        .filter(|p| p.is_file() && is_pdf(p))
+        .collect();
+    // a second instance forwards its files to the running one and exits
+    if !shell::is_primary() {
+        if !initial.is_empty() {
+            shell::submit_paths(&initial);
+        }
+        return Ok(());
+    }
+
     let icon = load_icon();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("EasyToPrint — bulk PDF printing")
@@ -2064,7 +2126,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "EasyToPrint",
         options,
-        Box::new(|cc| Ok(Box::new(App::new(cc)))),
+        Box::new(|cc| Ok(Box::new(App::new(cc, initial)))),
     )
 }
 

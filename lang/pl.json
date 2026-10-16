@@ -48,9 +48,11 @@
     "settings.paper.default": "Drukarka decyduje",
     "settings.paper.auto": "Jak w pliku PDF",
     "settings.legacyNote": "opcje druku wymagają wbudowanego silnika",
+    "settings.explorerMenu": "Dodaj do menu prawego przycisku Eksploratora (pliki PDF)",
     "settings.close": "Zamknij",
     "settings.tip": "Ustawienia",
 
+    "explorer.add": "Dodaj do EasyToPrint",
     "duplex.printer": "Drukarka decyduje",
     "duplex.simplex": "Jednostronnie",
     "duplex.long": "Dwustronnie (długa krawędź)",

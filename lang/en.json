@@ -48,9 +48,11 @@
     "settings.paper.default": "Printer default",
     "settings.paper.auto": "Match PDF page size",
     "settings.legacyNote": "print options need the built-in engine",
+    "settings.explorerMenu": "Add to the Explorer right-click menu (PDF files)",
     "settings.close": "Close",
     "settings.tip": "Settings",
 
+    "explorer.add": "Add to EasyToPrint",
     "duplex.printer": "Printer default",
     "duplex.simplex": "One-sided",
     "duplex.long": "Two-sided (long edge)",

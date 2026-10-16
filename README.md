@@ -14,6 +14,8 @@ status of every file. Each PDF arrives as a separate print job.
 ## Features
 
 - **drag & drop** of many PDF files at once — add more at any time, even mid-print
+- optional **Explorer right-click menu** — select PDF files, "Add to EasyToPrint"
+  (enable it in Settings; per-user registration, no admin rights)
 - **per-file status** as a colored badge in the queue table:
   *Waiting / Printing… / Sent / Error* (details on hover)
 - **progress bar** and error counter

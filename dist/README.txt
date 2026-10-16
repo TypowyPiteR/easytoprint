@@ -13,6 +13,8 @@ Getting started
 3) Drag & drop PDF files onto the light drop zone
    (or click the zone to browse for files).
    You can keep adding files while printing is in progress.
+   Tip: enable "Add to EasyToPrint" in Settings to get a right-click
+   menu entry in Windows Explorer — select many PDFs, right-click, add.
 
 4) Click "Print" — files are sent to the printer ONE BY ONE,
    with a short pause between jobs (for the printer spooler).
